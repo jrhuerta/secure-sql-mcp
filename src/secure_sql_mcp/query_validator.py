@@ -66,6 +66,11 @@ class QueryValidator:
             )
 
         statement = statements[0]
+        if statement is None:
+            return ValidationResult(
+                ok=False,
+                error="Could not parse the SQL query. Please check the syntax and try again.",
+            )
         statement_type = statement.key.upper() if statement.key else "UNKNOWN"
 
         if self._contains_disallowed_operation(statement):

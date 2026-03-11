@@ -85,4 +85,4 @@ class Settings(BaseSettings):
 
 def load_settings() -> Settings:
     """Load typed settings from environment variables."""
-    return Settings()
+    return Settings.model_validate({})

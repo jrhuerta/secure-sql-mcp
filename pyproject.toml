@@ -49,5 +49,5 @@ select = ["E", "F", "I", "UP", "B"]
 quote-style = "double"
 indent-style = "space"
 
-[tool.ty]
-src = ["src", "tests"]
+[tool.ty.src]
+include = ["src", "tests"]
