@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import inspect, text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from secure_sql_mcp.config import Settings
 
@@ -66,6 +66,7 @@ class AsyncDatabase:
             raise RuntimeError("Database engine is not initialized.")
 
         async with self._engine.connect() as conn:
+
             def _list(sync_conn: Any) -> list[str]:
                 inspector = inspect(sync_conn)
                 names = inspector.get_table_names()
@@ -80,6 +81,7 @@ class AsyncDatabase:
 
         schema, short_name = self._split_table_name(table_name)
         async with self._engine.connect() as conn:
+
             def _describe(sync_conn: Any) -> list[dict[str, Any]]:
                 inspector = inspect(sync_conn)
                 columns = inspector.get_columns(short_name, schema=schema)

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator
 
 from mcp.server.fastmcp import FastMCP
 
@@ -66,12 +65,12 @@ async def query(sql: str) -> str:
 
     try:
         result = await app.db.execute_read_query(validation.normalized_sql or sql)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return (
             f"Query exceeded the {app.settings.query_timeout}-second timeout. "
             "Try simplifying the query or adding filters."
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         LOGGER.exception("Failed to execute query")
         return (
             "Query execution failed with a database error. "

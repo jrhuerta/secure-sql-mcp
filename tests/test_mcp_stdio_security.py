@@ -108,7 +108,9 @@ def test_mcp_stdio_security_contract(tmp_path: Path) -> None:
                     {"sql": "SELECT id, ssn FROM customers"},
                 )
                 blocked_message = _first_text(blocked_query_result)
-                assert "Access to column(s) ssn on table 'customers' is restricted" in blocked_message
+                assert (
+                    "Access to column(s) ssn on table 'customers' is restricted" in blocked_message
+                )
 
     asyncio.run(_run())
 

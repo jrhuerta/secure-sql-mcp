@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from secure_sql_mcp import server as mcp_server
 from secure_sql_mcp.config import Settings
 from secure_sql_mcp.database import AsyncDatabase
 from secure_sql_mcp.query_validator import QueryValidator
 from secure_sql_mcp.server import AppState
-from secure_sql_mcp import server as mcp_server
 
 
 def _init_sqlite_db(path: Path) -> None:
@@ -296,7 +296,7 @@ def test_query_timeout_returns_actionable_message(
     app_state: AppState, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def _raise_timeout(_: str) -> object:
-        raise asyncio.TimeoutError()
+        raise TimeoutError()
 
     monkeypatch.setattr(app_state.db, "execute_read_query", _raise_timeout)
     response = asyncio.run(mcp_server.query("SELECT id FROM customers"))
