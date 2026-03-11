@@ -57,6 +57,25 @@ Core package: `src/secure_sql_mcp`
 Run core security suites:
 - `python -m pytest -q tests/test_mcp_interface.py tests/test_query_validator_security.py tests/test_mcp_stdio_security.py`
 
+## CI and Branch Protection
+
+- `main` is protected and should be treated as immutable without PR review.
+- Required checks before merge:
+  - `Lint, Type, Test`
+  - `Docker Build`
+- Repository rules enforce:
+  - PR-only merge flow
+  - at least 1 approving review
+  - stale review dismissal on new commits
+  - required linear history
+  - no force-push and no branch deletion
+
+## Container Publishing
+
+- GitHub Actions publishes container images to `ghcr.io/jrhuerta/secure-sql-mcp`.
+- Images are published only when a GitHub Release is published (e.g. tag `v0.1.0`).
+- Use the release tag to pull: `docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0`.
+
 ## Policy File Contract
 
 `ALLOWED_POLICY_FILE` lines:
@@ -68,7 +87,7 @@ Names are normalized to lowercase.
 
 ## Local Workflow
 
-- Package index (required for this environment):
+- Package index (optional; only needed for private/corporate PyPI mirrors):
   - `export PYTHON_INDEX_URL="https://<your-index>/simple"`
 - Install dev dependencies:
   - `python -m pip install --index-url "$PYTHON_INDEX_URL" -e ".[dev]"`

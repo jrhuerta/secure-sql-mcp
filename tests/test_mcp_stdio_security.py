@@ -3,43 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sqlite3
 import sys
 from pathlib import Path
 
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-
-def _init_sqlite_db(path: Path) -> None:
-    conn = sqlite3.connect(path)
-    try:
-        conn.executescript(
-            """
-            CREATE TABLE customers (
-              id INTEGER PRIMARY KEY,
-              email TEXT NOT NULL,
-              ssn TEXT
-            );
-            CREATE TABLE orders (
-              id INTEGER PRIMARY KEY,
-              total NUMERIC
-            );
-            CREATE TABLE secrets (
-              id INTEGER PRIMARY KEY,
-              token TEXT
-            );
-            INSERT INTO customers (id, email, ssn) VALUES (1, 'a@example.com', '111-22-3333');
-            INSERT INTO orders (id, total) VALUES (10, 19.99);
-            """
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _write_policy(path: Path) -> None:
-    path.write_text("customers:id,email\norders:*\n", encoding="utf-8")
+from tests.conftest import init_sqlite_db, write_policy
 
 
 def _first_text(call_result: object) -> str:
@@ -53,8 +23,8 @@ def _first_text(call_result: object) -> str:
 def _server_params(tmp_path: Path) -> StdioServerParameters:
     db_path = tmp_path / "test.db"
     policy_path = tmp_path / "allowed_policy.txt"
-    _init_sqlite_db(db_path)
-    _write_policy(policy_path)
+    init_sqlite_db(db_path)
+    write_policy(policy_path, "customers:id,email\norders:*\n")
 
     env = os.environ.copy()
     env.update(
@@ -108,7 +78,9 @@ def test_mcp_stdio_security_contract(tmp_path: Path) -> None:
                     {"sql": "SELECT id, ssn FROM customers"},
                 )
                 blocked_message = _first_text(blocked_query_result)
-                assert "Access to column(s) ssn on table 'customers' is restricted" in blocked_message
+                assert (
+                    "Access to column(s) ssn on table 'customers' is restricted" in blocked_message
+                )
 
     asyncio.run(_run())
 

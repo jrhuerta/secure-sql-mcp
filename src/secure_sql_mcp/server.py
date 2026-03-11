@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator
 
 from mcp.server.fastmcp import FastMCP
 
@@ -66,13 +65,13 @@ async def query(sql: str) -> str:
 
     try:
         result = await app.db.execute_read_query(validation.normalized_sql or sql)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return (
             f"Query exceeded the {app.settings.query_timeout}-second timeout. "
             "Try simplifying the query or adding filters."
         )
     except Exception as exc:  # noqa: BLE001
-        LOGGER.exception("Failed to execute query")
+        LOGGER.error("Failed to execute query: %s", type(exc).__name__)
         return (
             "Query execution failed with a database error. "
             "Use list_tables/describe_table to validate allowed targets, "
@@ -97,13 +96,14 @@ async def list_tables() -> str:
     app = _state()
     policy = app.settings.allowed_policy
     policy_tables = sorted(policy)
+    policy_set = {t.lower() for t in policy}
     discovered: list[str] = []
     discovery_error: str | None = None
     try:
         discovered = await app.db.list_tables()
     except Exception as exc:  # noqa: BLE001
         LOGGER.warning("Failed to list tables for metadata validation: %s", exc)
-        discovery_error = str(exc)
+        discovery_error = "Database metadata access failed."
 
     discovered_set = {table.lower() for table in discovered}
     if discovered:
@@ -120,6 +120,8 @@ async def list_tables() -> str:
         for table, columns in sorted(policy.items())
     }
 
+    discovered_tables_filtered = sorted(t for t in discovered if t.lower() in policy_set)
+
     payload = {
         "status": "ok",
         "allowed_tables": existing_allowed,
@@ -128,7 +130,7 @@ async def list_tables() -> str:
         "unverified_allowlist_tables": missing_allowed,
         "metadata_access_error": discovery_error,
         "allowed_columns_by_table": allowed_columns,
-        "discovered_tables": sorted(discovered),
+        "discovered_tables": discovered_tables_filtered,
     }
     return json.dumps(payload, indent=2)
 
@@ -137,7 +139,7 @@ async def list_tables() -> str:
 async def describe_table(table: str) -> str:
     """Describe columns for an allowed table."""
     app = _state()
-    policy_columns = app.validator._lookup_table_policy(table)
+    policy_columns = app.validator.lookup_table_policy(table)
     if policy_columns is None:
         available_tables = ", ".join(sorted(app.settings.allowed_policy))
         return (
@@ -153,8 +155,11 @@ async def describe_table(table: str) -> str:
     try:
         columns = await app.db.describe_table(table)
     except Exception as exc:  # noqa: BLE001
-        LOGGER.exception("Failed to describe table")
-        return f"Unable to describe table '{table}' due to a database error: {exc}"
+        LOGGER.error("Failed to describe table: %s", type(exc).__name__)
+        return (
+            "Unable to describe table due to a database error. "
+            "Use list_tables to inspect available tables or escalate to a human operator."
+        )
 
     if not columns:
         return f"Table '{table}' was not found or has no visible columns."

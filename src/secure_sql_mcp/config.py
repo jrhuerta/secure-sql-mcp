@@ -43,7 +43,8 @@ class Settings(BaseSettings):
             raise ValueError(f"Allowed policy path is not a file: {file_path}")
 
         policy: dict[str, set[str]] = {}
-        for line_number, raw_line in enumerate(file_path.read_text(encoding="utf-8").splitlines(), start=1):
+        lines = file_path.read_text(encoding="utf-8").splitlines()
+        for line_number, raw_line in enumerate(lines, start=1):
             line = raw_line.split("#", 1)[0].strip()
             if not line:
                 continue
@@ -59,7 +60,9 @@ class Settings(BaseSettings):
             if not table_name:
                 raise ValueError(f"Missing table name on line {line_number}.")
 
-            column_tokens = [token.strip().lower() for token in columns_part.split(",") if token.strip()]
+            column_tokens = [
+                token.strip().lower() for token in columns_part.split(",") if token.strip()
+            ]
             if not column_tokens:
                 raise ValueError(
                     f"Missing columns for table '{table_name}' on line {line_number}. "
@@ -82,4 +85,4 @@ class Settings(BaseSettings):
 
 def load_settings() -> Settings:
     """Load typed settings from environment variables."""
-    return Settings()
+    return Settings.model_validate({})

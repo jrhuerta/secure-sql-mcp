@@ -6,16 +6,13 @@ import pytest
 
 from secure_sql_mcp.config import Settings
 from secure_sql_mcp.query_validator import QueryValidator
-
-
-def _write_policy(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf-8")
+from tests.conftest import write_policy
 
 
 @pytest.fixture()
 def validator(tmp_path: Path) -> QueryValidator:
     policy_path = tmp_path / "allowed_policy.txt"
-    _write_policy(
+    write_policy(
         policy_path,
         """
         customers:id,email
@@ -108,3 +105,49 @@ def test_validator_blocks_select_star_for_non_wildcard_table(validator: QueryVal
 def test_validator_allows_select_star_for_wildcard_table(validator: QueryValidator) -> None:
     result = validator.validate_query("SELECT o.* FROM orders AS o")
     assert result.ok
+
+
+def test_validator_blocks_explain(validator: QueryValidator) -> None:
+    """EXPLAIN/EXPLAIN ANALYZE can execute queries in PostgreSQL; must be blocked."""
+    result = validator.validate_query("EXPLAIN SELECT id FROM customers")
+    assert not result.ok
+    assert "read-only access" in (result.error or "")
+
+
+def test_validator_blocks_explain_analyze(validator: QueryValidator) -> None:
+    result = validator.validate_query("EXPLAIN ANALYZE SELECT id FROM customers")
+    assert not result.ok
+    assert "read-only access" in (result.error or "")
+
+
+def test_validator_blocks_information_schema(validator: QueryValidator) -> None:
+    """information_schema is not in policy; must be blocked."""
+    result = validator.validate_query("SELECT * FROM information_schema.tables")
+    assert not result.ok
+    assert "restricted" in (result.error or "")
+
+
+def test_validator_blocks_sqlite_master(validator: QueryValidator) -> None:
+    """sqlite_master is not in policy; must be blocked."""
+    result = validator.validate_query("SELECT * FROM sqlite_master")
+    assert not result.ok
+    assert "restricted" in (result.error or "")
+
+
+def test_validator_blocks_cte_with_disallowed_table(validator: QueryValidator) -> None:
+    """CTE referencing disallowed table must be blocked."""
+    result = validator.validate_query("WITH cte AS (SELECT id FROM secrets) SELECT * FROM cte")
+    assert not result.ok
+    assert "restricted" in (result.error or "")
+
+
+def test_validator_blocks_intersect_with_disallowed_table(validator: QueryValidator) -> None:
+    result = validator.validate_query("SELECT id FROM customers INTERSECT SELECT id FROM secrets")
+    assert not result.ok
+    assert "Access to table 'secrets' is restricted" in (result.error or "")
+
+
+def test_validator_blocks_except_with_disallowed_table(validator: QueryValidator) -> None:
+    result = validator.validate_query("SELECT id FROM customers EXCEPT SELECT id FROM secrets")
+    assert not result.ok
+    assert "Access to table 'secrets' is restricted" in (result.error or "")

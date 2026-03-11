@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import DefaultDict
 
 import sqlglot
 from sqlglot import exp
@@ -67,6 +66,11 @@ class QueryValidator:
             )
 
         statement = statements[0]
+        if statement is None:
+            return ValidationResult(
+                ok=False,
+                error="Could not parse the SQL query. Please check the syntax and try again.",
+            )
         statement_type = statement.key.upper() if statement.key else "UNKNOWN"
 
         if self._contains_disallowed_operation(statement):
@@ -82,10 +86,7 @@ class QueryValidator:
         if not self._is_read_statement(statement):
             return ValidationResult(
                 ok=False,
-                error=(
-                    "Only read-only SELECT queries are allowed. "
-                    f"Received '{statement_type}'."
-                ),
+                error=(f"Only read-only SELECT queries are allowed. Received '{statement_type}'."),
             )
 
         referenced_tables = self.extract_referenced_tables(statement)
@@ -109,9 +110,13 @@ class QueryValidator:
 
         return ValidationResult(
             ok=True,
-            normalized_sql=statement.sql(dialect=self._dialect) if self._dialect else statement.sql(),
+            normalized_sql=(
+                statement.sql(dialect=self._dialect) if self._dialect else statement.sql()
+            ),
             referenced_tables=referenced_tables,
-            referenced_columns={table: sorted(columns) for table, columns in referenced_columns.items()},
+            referenced_columns={
+                table: sorted(columns) for table, columns in referenced_columns.items()
+            },
         )
 
     def table_access_error(
@@ -141,7 +146,7 @@ class QueryValidator:
     ) -> tuple[dict[str, set[str]], set[str]] | str:
         """Collect referenced columns and SELECT * targets."""
         alias_map = self._build_alias_map(statement)
-        columns_by_table: DefaultDict[str, set[str]] = defaultdict(set)
+        columns_by_table: defaultdict[str, set[str]] = defaultdict(set)
         unqualified_columns: set[str] = set()
         star_tables: set[str] = set()
 
@@ -177,7 +182,8 @@ class QueryValidator:
             elif len(referenced_tables) > 1:
                 cols = ", ".join(sorted(unqualified_columns))
                 return (
-                    "Unqualified column references are not allowed in multi-table queries under strict mode. "
+                    "Unqualified column references are not allowed in multi-table queries "
+                    "under strict mode. "
                     f"Columns: {cols}. Please qualify each column with its table alias/name."
                 )
 
@@ -188,7 +194,7 @@ class QueryValidator:
         available = ", ".join(sorted(self.settings.allowed_policy))
 
         for table in tables:
-            policy_columns = self._lookup_table_policy(table)
+            policy_columns = self.lookup_table_policy(table)
             if policy_columns is None:
                 return (
                     f"Access to table '{table}' is restricted by the server access policy. "
@@ -212,7 +218,8 @@ class QueryValidator:
             if disallowed:
                 allowed_text = ", ".join(sorted(allowed_columns))
                 return (
-                    f"Access to column(s) {', '.join(disallowed)} on table '{table}' is restricted. "
+                    f"Access to column(s) {', '.join(disallowed)} on table '{table}' "
+                    "is restricted. "
                     f"Allowed columns: {allowed_text}. "
                     "Use describe_table to inspect policy or escalate to a human operator."
                 )
@@ -258,7 +265,8 @@ class QueryValidator:
             parts.append(str(table.name))
         return ".".join(parts).lower()
 
-    def _lookup_table_policy(self, table_name: str) -> set[str] | None:
+    def lookup_table_policy(self, table_name: str) -> set[str] | None:
+        """Return allowed columns for a table from policy, or None if not allowed."""
         normalized = table_name.lower()
         candidates = (normalized, normalized.split(".")[-1])
         for candidate in candidates:
