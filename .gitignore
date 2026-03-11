@@ -1,7 +1,12 @@
 .env
 .venv/
+.ruff_cache/
 .pytest_cache/
 __pycache__/
 *.pyc
+*.egg-info/
+*.egg
+dist/
+build/
 example.db
 policy/

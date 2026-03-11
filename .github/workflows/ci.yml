@@ -5,11 +5,14 @@ on:
     branches: [main]
   push:
     branches: [main]
-    tags:
-      - "v*"
+  release:
+    types: [published]
 
 permissions:
   contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -21,12 +24,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install dependencies
         run: python -m pip install -e ".[dev]"
@@ -46,13 +50,13 @@ jobs:
     needs: quality
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build container image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -61,16 +65,18 @@ jobs:
     name: Publish GHCR
     runs-on: ubuntu-latest
     needs: [quality, docker-build]
-    if: github.event_name == 'push'
+    if: github.event_name == 'release' && github.event.action == 'published'
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -85,12 +91,10 @@ jobs:
         with:
           images: ghcr.io/jrhuerta/secure-sql-mcp
           tags: |
-            type=raw,value=main,enable={{is_default_branch}}
-            type=sha,format=short,prefix=sha-
-            type=ref,event=tag
+            type=raw,value=${{ github.event.release.tag_name }}
 
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true

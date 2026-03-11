@@ -31,13 +31,23 @@ Read-only SQL MCP server with strict table/column policy controls.
   - Validation and policy failures return actionable remediation hints.
   - Database execution failures are sanitized to avoid leaking sensitive internal details.
 
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes | — | SQLAlchemy async URL (e.g. `sqlite+aiosqlite:///./example.db` or `postgresql+asyncpg://...`) |
+| `ALLOWED_POLICY_FILE` | Yes | — | Path to the policy file |
+| `MAX_ROWS` | No | 100 | Maximum rows returned per query (1–10000) |
+| `QUERY_TIMEOUT` | No | 30 | Query timeout in seconds (1–300) |
+| `LOG_LEVEL` | No | INFO | Logging level (DEBUG, INFO, WARNING, ERROR) |
+
 ## Policy File Format
 
 `allowed_policy.txt`:
 
 ```text
 # table:columns
-customers:id,email,created_at
+customers:id,email
 orders:*
 ```
 
@@ -63,11 +73,11 @@ The MCP server exposes:
 ## Quick Start (uv)
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/jrhuerta/secure-sql-mcp.git
 cd secure-sql-mcp
 
-# Use your custom package index for uv/pip operations in this repo
-export PYTHON_INDEX_URL="https://<your-index>/simple"
+# Optional: use a custom package index for uv/pip (e.g. corporate PyPI mirror)
+# export PYTHON_INDEX_URL="https://<your-index>/simple"
 
 cat > .env <<'EOF'
 DATABASE_URL=sqlite+aiosqlite:///./example.db
@@ -83,16 +93,24 @@ customers:id,email
 orders:*
 EOF
 
+# Create tables for local testing (optional)
+sqlite3 example.db <<'SQL'
+CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY, email TEXT NOT NULL, ssn TEXT);
+CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY, total NUMERIC);
+INSERT OR IGNORE INTO customers (id, email) VALUES (1, 'test@example.com');
+INSERT OR IGNORE INTO orders (id, total) VALUES (1, 19.99);
+SQL
+
 uv venv
 source .venv/bin/activate
-uv pip install --index-url "$PYTHON_INDEX_URL" -e .
+uv pip install -e .
 python -m secure_sql_mcp.server
 ```
 
 ## Quick Start (Docker)
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/jrhuerta/secure-sql-mcp.git
 cd secure-sql-mcp
 
 mkdir -p policy
@@ -118,10 +136,10 @@ docker run -i --rm \
 
 ## Quick Start (GHCR Image)
 
-Pull the published image:
+Images are published when a GitHub Release is published (e.g. tag `v0.1.0`). Pull by release tag:
 
 ```bash
-docker pull ghcr.io/jrhuerta/secure-sql-mcp:main
+docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0
 ```
 
 Run with env file and read-only mounted policy:
@@ -130,16 +148,39 @@ Run with env file and read-only mounted policy:
 docker run -i --rm \
   --env-file .env \
   -v "$(pwd)/policy:/run/policy:ro" \
-  ghcr.io/jrhuerta/secure-sql-mcp:main
+  ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0
 ```
 
-Version tags are published when Git tags like `v1.2.3` are pushed.
-
-Or with compose:
+Or with Docker Compose (builds from local Dockerfile):
 
 ```bash
 docker compose up --build
 ```
+
+## MCP Client Configuration
+
+To use this server with Cursor, Claude Desktop, or other MCP clients, add it to your MCP config:
+
+**Cursor** (`.cursor/mcp.json` or Cursor Settings → MCP):
+
+```json
+{
+  "mcpServers": {
+    "secure-sql": {
+      "command": "python",
+      "args": ["-m", "secure_sql_mcp.server"],
+      "env": {
+        "DATABASE_URL": "sqlite+aiosqlite:///./example.db",
+        "ALLOWED_POLICY_FILE": "./policy/allowed_policy.txt"
+      }
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`): same structure under `mcpServers`.
+
+Ensure the policy file path and database URL are correct for your environment.
 
 ## Secrets Best Practices
 
@@ -151,7 +192,7 @@ docker compose up --build
 ## Dev Tooling
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev]"   # or: uv pip install -e ".[dev]"
 pre-commit install
 pre-commit run --all-files
 ruff check .
@@ -235,9 +276,9 @@ After merging workflow/docs changes, verify:
   - required checks `Lint, Type, Test` and `Docker Build`
   - linear history, no force-push, no deletion
 - CI workflow runs on PRs and on pushes to `main`
-- GHCR image publish succeeds on push to `main`
-- GHCR pull works:
-  - `docker pull ghcr.io/jrhuerta/secure-sql-mcp:main`
+- GHCR image publish succeeds when a GitHub Release is published
+- GHCR pull works (use release tag, e.g. `v0.1.0`):
+  - `docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0`
 - community docs are present:
   - `CONTRIBUTING.md`
   - `CODE_OF_CONDUCT.md`

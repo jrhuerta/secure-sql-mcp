@@ -73,8 +73,8 @@ Run core security suites:
 ## Container Publishing
 
 - GitHub Actions publishes container images to `ghcr.io/jrhuerta/secure-sql-mcp`.
-- `main` branch publishes the `main` tag and a `sha-*` tag.
-- Git tags matching `v*` publish versioned image tags.
+- Images are published only when a GitHub Release is published (e.g. tag `v0.1.0`).
+- Use the release tag to pull: `docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0`.
 
 ## Policy File Contract
 
@@ -87,7 +87,7 @@ Names are normalized to lowercase.
 
 ## Local Workflow
 
-- Package index (required for this environment):
+- Package index (optional; only needed for private/corporate PyPI mirrors):
   - `export PYTHON_INDEX_URL="https://<your-index>/simple"`
 - Install dev dependencies:
   - `python -m pip install --index-url "$PYTHON_INDEX_URL" -e ".[dev]"`

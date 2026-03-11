@@ -2,11 +2,13 @@
 
 Thanks for contributing. This project enforces strict security behavior, so changes should be small, reviewed, and fully tested.
 
+When opening issues, use the bug report or feature request templates in the GitHub issue creator.
+
 ## Development Setup
 
 1. Create and activate a virtual environment.
 2. Install dev dependencies:
-   - `python -m pip install -e ".[dev]"`
+   - `python -m pip install -e ".[dev]"` (or with uv: `uv pip install -e ".[dev]"`)
 3. Install pre-commit:
    - `pre-commit install`
 

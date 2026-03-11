@@ -194,7 +194,7 @@ class QueryValidator:
         available = ", ".join(sorted(self.settings.allowed_policy))
 
         for table in tables:
-            policy_columns = self._lookup_table_policy(table)
+            policy_columns = self.lookup_table_policy(table)
             if policy_columns is None:
                 return (
                     f"Access to table '{table}' is restricted by the server access policy. "
@@ -265,7 +265,8 @@ class QueryValidator:
             parts.append(str(table.name))
         return ".".join(parts).lower()
 
-    def _lookup_table_policy(self, table_name: str) -> set[str] | None:
+    def lookup_table_policy(self, table_name: str) -> set[str] | None:
+        """Return allowed columns for a table from policy, or None if not allowed."""
         normalized = table_name.lower()
         candidates = (normalized, normalized.split(".")[-1])
         for candidate in candidates:

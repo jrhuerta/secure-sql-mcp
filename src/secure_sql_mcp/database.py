@@ -47,7 +47,8 @@ class AsyncDatabase:
         statement = text(limited_sql)
 
         async def _run() -> QueryExecutionResult:
-            assert self._engine is not None
+            if self._engine is None:
+                raise RuntimeError("Database engine is not initialized.")
             async with self._engine.connect() as conn:
                 await self._prepare_read_only_session(conn)
                 result = await conn.execute(statement)
@@ -100,7 +101,7 @@ class AsyncDatabase:
     async def _prepare_read_only_session(self, conn: AsyncConnection) -> None:
         """Apply DB-specific read-only and timeout settings."""
         if self._settings.database_url.startswith("postgresql"):
-            timeout_ms = self._settings.query_timeout * 1000
+            timeout_ms = int(self._settings.query_timeout) * 1000
             await conn.execute(text("BEGIN READ ONLY"))
             await conn.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
         elif self._settings.database_url.startswith("sqlite"):
@@ -109,11 +110,13 @@ class AsyncDatabase:
     @staticmethod
     def _wrap_with_limit(sql: str, limit: int) -> str:
         query = sql.strip().rstrip(";")
-        return f"SELECT * FROM ({query}) AS secure_sql_mcp_subquery LIMIT {limit}"
+        return f"SELECT * FROM ({query}) AS secure_sql_mcp_subquery LIMIT {limit}"  # noqa: S608
 
     @staticmethod
     def _split_table_name(table_name: str) -> tuple[str | None, str]:
         parts = [p for p in table_name.split(".") if p]
+        if not parts:
+            return None, table_name or ""
         if len(parts) <= 1:
             return None, parts[0]
         return ".".join(parts[:-1]), parts[-1]

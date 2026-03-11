@@ -1,3 +1,0 @@
-# Strict table:columns policy
-customers:id,email
-orders:*

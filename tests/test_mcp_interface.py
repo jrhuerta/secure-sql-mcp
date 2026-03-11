@@ -13,46 +13,16 @@ from secure_sql_mcp.config import Settings
 from secure_sql_mcp.database import AsyncDatabase
 from secure_sql_mcp.query_validator import QueryValidator
 from secure_sql_mcp.server import AppState
-
-
-def _init_sqlite_db(path: Path) -> None:
-    conn = sqlite3.connect(path)
-    try:
-        conn.executescript(
-            """
-            CREATE TABLE customers (
-              id INTEGER PRIMARY KEY,
-              email TEXT NOT NULL,
-              ssn TEXT
-            );
-            CREATE TABLE orders (
-              id INTEGER PRIMARY KEY,
-              total NUMERIC
-            );
-            CREATE TABLE secrets (
-              id INTEGER PRIMARY KEY,
-              token TEXT
-            );
-            INSERT INTO customers (id, email, ssn) VALUES (1, 'a@example.com', '111-22-3333');
-            INSERT INTO orders (id, total) VALUES (10, 19.99);
-            """
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _write_policy(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf-8")
+from tests.conftest import init_sqlite_db, write_policy
 
 
 @pytest.fixture()
 def app_state(tmp_path: Path):
     db_path = tmp_path / "test.db"
-    _init_sqlite_db(db_path)
+    init_sqlite_db(db_path)
 
     policy_path = tmp_path / "allowed_policy.txt"
-    _write_policy(
+    write_policy(
         policy_path,
         """
         customers:id,email
@@ -102,7 +72,7 @@ def limited_app_state(tmp_path: Path):
         conn.close()
 
     policy_path = tmp_path / "allowed_policy.txt"
-    _write_policy(
+    write_policy(
         policy_path,
         """
         orders:*
@@ -132,7 +102,7 @@ def limited_app_state(tmp_path: Path):
 
 def test_policy_parsing_valid(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.txt"
-    _write_policy(
+    write_policy(
         policy_path,
         """
         customers:id,email
@@ -146,12 +116,13 @@ def test_policy_parsing_valid(tmp_path: Path) -> None:
     assert settings.allowed_policy["orders"] == {"*"}
 
 
-def test_policy_parsing_missing_file_raises() -> None:
+def test_policy_parsing_missing_file_raises(tmp_path: Path) -> None:
+    missing_path = tmp_path / "does-not-exist-policy.txt"
     with pytest.raises(ValidationError):
         Settings.model_validate(
             {
                 "DATABASE_URL": "sqlite+aiosqlite:///./tmp.db",
-                "ALLOWED_POLICY_FILE": "/tmp/does-not-exist-policy.txt",
+                "ALLOWED_POLICY_FILE": str(missing_path),
             }
         )
 
@@ -198,6 +169,12 @@ def test_query_blocks_mutation_operations(app_state: AppState, sql: str, operati
 def test_query_blocks_multi_statement_payload(app_state: AppState) -> None:
     response = asyncio.run(mcp_server.query("SELECT id FROM customers; DROP TABLE customers"))
     assert "Only a single SQL statement is allowed" in response
+
+
+def test_query_blocks_explain(app_state: AppState) -> None:
+    """EXPLAIN/EXPLAIN ANALYZE can execute queries in PostgreSQL; must be blocked."""
+    response = asyncio.run(mcp_server.query("EXPLAIN SELECT id FROM customers"))
+    assert "read-only access" in response
 
 
 def test_query_blocks_join_to_disallowed_table(app_state: AppState) -> None:
@@ -279,8 +256,32 @@ def test_list_tables_metadata_unavailable_still_returns_policy(
     response = asyncio.run(mcp_server.list_tables())
     payload = json.loads(response)
     assert payload["validation_status"] == "validation_unavailable"
-    assert payload["metadata_access_error"] == "metadata access denied"
+    assert payload["metadata_access_error"] == "Database metadata access failed."
     assert payload["allowed_columns_by_table"]["customers"] == ["email", "id"]
+
+
+def test_describe_table_db_error_does_not_leak_sensitive_details(
+    app_state: AppState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _raise_db_error(_: str) -> list:
+        raise RuntimeError("password=supersecret host=internal-db")
+
+    monkeypatch.setattr(app_state.db, "describe_table", _raise_db_error)
+    response = asyncio.run(mcp_server.describe_table("customers"))
+    assert "Unable to describe table due to a database error" in response
+    assert "list_tables" in response
+    assert "supersecret" not in response
+    assert "internal-db" not in response
+
+
+def test_list_tables_discovered_tables_excludes_non_policy_tables(app_state: AppState) -> None:
+    """discovered_tables must only include policy-allowed tables, not all DB tables."""
+    response = asyncio.run(mcp_server.list_tables())
+    payload = json.loads(response)
+    assert payload["status"] == "ok"
+    discovered = payload["discovered_tables"]
+    assert "secrets" not in discovered
+    assert set(discovered) <= {"customers", "orders"}
 
 
 def test_query_respects_row_limit_and_marks_truncated(limited_app_state: AppState) -> None:
