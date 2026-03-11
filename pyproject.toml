@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secure-sql-mcp"
+version = "0.1.0"
+description = "Read-only SQL MCP server with table-level access controls."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp[cli]",
+  "sqlglot",
+  "sqlalchemy[asyncio]",
+  "asyncpg",
+  "aiosqlite",
+  "pydantic-settings",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+secure-sql-mcp = "secure_sql_mcp.server:main"
+
+[project.optional-dependencies]
+dev = [
+  "pre-commit",
+  "pytest",
+  "ruff",
+  "ty",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty]
+src = ["src", "tests"]

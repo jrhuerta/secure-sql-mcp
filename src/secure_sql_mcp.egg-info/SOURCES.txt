@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/secure_sql_mcp/__init__.py
+src/secure_sql_mcp/config.py
+src/secure_sql_mcp/database.py
+src/secure_sql_mcp/query_validator.py
+src/secure_sql_mcp/server.py
+src/secure_sql_mcp.egg-info/PKG-INFO
+src/secure_sql_mcp.egg-info/SOURCES.txt
+src/secure_sql_mcp.egg-info/dependency_links.txt
+src/secure_sql_mcp.egg-info/entry_points.txt
+src/secure_sql_mcp.egg-info/requires.txt
+src/secure_sql_mcp.egg-info/top_level.txt
+tests/test_mcp_interface.py

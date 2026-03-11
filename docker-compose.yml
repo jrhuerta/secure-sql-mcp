@@ -1,0 +1,16 @@
+services:
+  secure-sql-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: secure-sql-mcp:latest
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./example.db}
+      ALLOWED_POLICY_FILE: ${ALLOWED_POLICY_FILE:-/run/policy/allowed_policy.txt}
+      MAX_ROWS: ${MAX_ROWS:-100}
+      QUERY_TIMEOUT: ${QUERY_TIMEOUT:-30}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./policy:/run/policy:ro
+    stdin_open: true
+    tty: false

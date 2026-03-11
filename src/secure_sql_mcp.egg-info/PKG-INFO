@@ -1,0 +1,150 @@
+Metadata-Version: 2.4
+Name: secure-sql-mcp
+Version: 0.1.0
+Summary: Read-only SQL MCP server with table-level access controls.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: mcp[cli]
+Requires-Dist: sqlglot
+Requires-Dist: sqlalchemy[asyncio]
+Requires-Dist: asyncpg
+Requires-Dist: aiosqlite
+Requires-Dist: pydantic-settings
+Provides-Extra: dev
+Requires-Dist: pre-commit; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: ty; extra == "dev"
+
+# Secure SQL MCP Server
+
+Read-only SQL MCP server with strict table/column policy controls.
+
+## Security Model
+
+- Database credentials stay server-side (env vars), never in prompts.
+- Only read queries are allowed.
+- Policy is strict and file-based:
+  - one required file: `ALLOWED_POLICY_FILE`
+  - each line is `table:col1,col2,col3` or `table:*`
+- If a table/column is not explicitly allowed, it is blocked.
+
+## Policy File Format
+
+`allowed_policy.txt`:
+
+```text
+# table:columns
+customers:id,email,created_at
+orders:*
+```
+
+Rules:
+- `table:*` allows all columns in that table.
+- `#` comments and blank lines are allowed.
+- Matching is case-insensitive.
+
+## Agent Discoverability
+
+The MCP server exposes:
+
+- `list_tables()`:
+  - tables allowed by policy
+  - allowed columns per table (`*` or explicit list)
+  - metadata validation status (if DB introspection is possible)
+- `describe_table(table)`:
+  - allowed columns for that table from policy
+  - schema metadata from DB when available
+- `query(sql)`:
+  - executes only if query is read-only and within table/column policy
+
+## Quick Start (uv)
+
+```bash
+git clone <your-repo-url>
+cd secure-sql-mcp
+
+# Use your custom package index for uv/pip operations in this repo
+export PYTHON_INDEX_URL="https://<your-index>/simple"
+
+cat > .env <<'EOF'
+DATABASE_URL=sqlite+aiosqlite:///./example.db
+ALLOWED_POLICY_FILE=./policy/allowed_policy.txt
+MAX_ROWS=100
+QUERY_TIMEOUT=30
+LOG_LEVEL=INFO
+EOF
+
+mkdir -p policy
+cat > policy/allowed_policy.txt <<'EOF'
+customers:id,email
+orders:*
+EOF
+
+uv venv
+source .venv/bin/activate
+uv pip install --index-url "$PYTHON_INDEX_URL" -e .
+python -m secure_sql_mcp.server
+```
+
+## Quick Start (Docker)
+
+```bash
+git clone <your-repo-url>
+cd secure-sql-mcp
+
+mkdir -p policy
+cat > policy/allowed_policy.txt <<'EOF'
+customers:id,email
+orders:*
+EOF
+
+cat > .env <<'EOF'
+DATABASE_URL=sqlite+aiosqlite:///./example.db
+ALLOWED_POLICY_FILE=/run/policy/allowed_policy.txt
+MAX_ROWS=100
+QUERY_TIMEOUT=30
+LOG_LEVEL=INFO
+EOF
+
+docker build -t secure-sql-mcp .
+docker run -i --rm \
+  --env-file .env \
+  -v "$(pwd)/policy:/run/policy:ro" \
+  secure-sql-mcp
+```
+
+Or with compose:
+
+```bash
+docker compose up --build
+```
+
+## Secrets Best Practices
+
+- Put credentials only in `.env` (or your secret manager), never in prompts.
+- Avoid hardcoding credentials in shell history.
+- Mount policy files read-only (`:ro`) in Docker.
+- Keep `.env` and policy files out of version control.
+
+## Dev Tooling
+
+```bash
+export PYTHON_INDEX_URL="https://<your-index>/simple"
+python -m pip install --index-url "$PYTHON_INDEX_URL" -e ".[dev]"
+pre-commit install
+pre-commit run --all-files
+ruff check .
+ruff format .
+ty check
+python -m pytest -q
+```
+
+## Example Block Messages
+
+- Mutation blocked:
+  - `This server is configured for read-only access. The operation 'UPDATE' is not permitted. If you need to modify data, please escalate to a human operator.`
+- Policy blocked table:
+  - `Access to table 'secrets' is restricted by the server access policy. ...`
+- Policy blocked column:
+  - `Access to column(s) ssn on table 'customers' is restricted. ...`

@@ -1,0 +1,12 @@
+mcp[cli]
+sqlglot
+sqlalchemy[asyncio]
+asyncpg
+aiosqlite
+pydantic-settings
+
+[dev]
+pre-commit
+pytest
+ruff
+ty

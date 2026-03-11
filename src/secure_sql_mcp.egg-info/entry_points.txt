@@ -1,0 +1,2 @@
+[console_scripts]
+secure-sql-mcp = secure_sql_mcp.server:main
