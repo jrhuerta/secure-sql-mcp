@@ -57,6 +57,25 @@ Core package: `src/secure_sql_mcp`
 Run core security suites:
 - `python -m pytest -q tests/test_mcp_interface.py tests/test_query_validator_security.py tests/test_mcp_stdio_security.py`
 
+## CI and Branch Protection
+
+- `main` is protected and should be treated as immutable without PR review.
+- Required checks before merge:
+  - `Lint, Type, Test`
+  - `Docker Build`
+- Repository rules enforce:
+  - PR-only merge flow
+  - at least 1 approving review
+  - stale review dismissal on new commits
+  - required linear history
+  - no force-push and no branch deletion
+
+## Container Publishing
+
+- GitHub Actions publishes container images to `ghcr.io/jrhuerta/secure-sql-mcp`.
+- `main` branch publishes the `main` tag and a `sha-*` tag.
+- Git tags matching `v*` publish versioned image tags.
+
 ## Policy File Contract
 
 `ALLOWED_POLICY_FILE` lines:

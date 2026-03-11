@@ -2,6 +2,9 @@
 
 Read-only SQL MCP server with strict table/column policy controls.
 
+[![CI](https://github.com/jrhuerta/secure-sql-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jrhuerta/secure-sql-mcp/actions/workflows/ci.yml)
+[![GHCR](https://img.shields.io/badge/ghcr-jrhuerta%2Fsecure--sql--mcp-blue)](https://github.com/jrhuerta/secure-sql-mcp/pkgs/container/secure-sql-mcp)
+
 ## Security Model
 
 - Database credentials stay server-side (env vars), never in prompts.
@@ -113,6 +116,25 @@ docker run -i --rm \
   secure-sql-mcp
 ```
 
+## Quick Start (GHCR Image)
+
+Pull the published image:
+
+```bash
+docker pull ghcr.io/jrhuerta/secure-sql-mcp:main
+```
+
+Run with env file and read-only mounted policy:
+
+```bash
+docker run -i --rm \
+  --env-file .env \
+  -v "$(pwd)/policy:/run/policy:ro" \
+  ghcr.io/jrhuerta/secure-sql-mcp:main
+```
+
+Version tags are published when Git tags like `v1.2.3` are pushed.
+
 Or with compose:
 
 ```bash
@@ -129,8 +151,7 @@ docker compose up --build
 ## Dev Tooling
 
 ```bash
-export PYTHON_INDEX_URL="https://<your-index>/simple"
-python -m pip install --index-url "$PYTHON_INDEX_URL" -e ".[dev]"
+python -m pip install -e ".[dev]"
 pre-commit install
 pre-commit run --all-files
 ruff check .
@@ -175,6 +196,18 @@ Recommended policy:
 - require test updates when changing query validation, policy parsing, or MCP tool responses
 - keep security test fixtures deterministic (no shared state, no external DB dependency by default)
 
+## Contributing
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
+- Community behavior expectations are in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- Licensing terms are in [LICENSE](LICENSE).
+- Review expectations are enforced on `main`:
+  - pull request required
+  - at least 1 approving review
+  - required CI checks (`Lint, Type, Test` and `Docker Build`)
+  - linear history required
+- Security reports should go to [SECURITY.md](SECURITY.md) and not public issues.
+
 ## Security Quick Audit Checklist
 
 Before merging security-sensitive changes, verify:
@@ -190,6 +223,27 @@ Before merging security-sensitive changes, verify:
   - `tests/test_mcp_interface.py`
   - `tests/test_query_validator_security.py`
   - `tests/test_mcp_stdio_security.py`
+
+## Public Rollout Verification Checklist
+
+After merging workflow/docs changes, verify:
+
+- repository visibility is `Public`
+- `main` branch protection is active and requires:
+  - PR-based merges
+  - 1 approving review
+  - required checks `Lint, Type, Test` and `Docker Build`
+  - linear history, no force-push, no deletion
+- CI workflow runs on PRs and on pushes to `main`
+- GHCR image publish succeeds on push to `main`
+- GHCR pull works:
+  - `docker pull ghcr.io/jrhuerta/secure-sql-mcp:main`
+- community docs are present:
+  - `CONTRIBUTING.md`
+  - `CODE_OF_CONDUCT.md`
+  - `SECURITY.md`
+  - `.github/ISSUE_TEMPLATE/*`
+  - `.github/PULL_REQUEST_TEMPLATE.md`
 
 ## Example Block Messages
 
