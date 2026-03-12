@@ -5,6 +5,34 @@ Read-only SQL MCP server with strict table/column policy controls.
 [![CI](https://github.com/jrhuerta/secure-sql-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jrhuerta/secure-sql-mcp/actions/workflows/ci.yml)
 [![GHCR](https://img.shields.io/badge/ghcr-jrhuerta%2Fsecure--sql--mcp-blue)](https://github.com/jrhuerta/secure-sql-mcp/pkgs/container/secure-sql-mcp)
 
+## MCP Client Configuration
+
+To use this server with Cursor, Claude Desktop, or other MCP clients, add it to your MCP config:
+
+**Cursor** (`.cursor/mcp.json` or Cursor Settings → MCP):
+
+```json
+{
+  "mcpServers": {
+    "secure-sql": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--env-file", "/path/to/your/secrets",
+        "-v", "/path/to/your/policy:/run/policy:ro",
+        "ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0"
+      ]
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`): same structure under `mcpServers`.
+
+The `--env-file` should point to a file containing `DATABASE_URL` and `ALLOWED_POLICY_FILE=/run/policy/allowed_policy.txt` (see Environment Variables below). The volume mounts the policy directory read-only. Pull the image first: `docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0`
+
 ## Security Model
 
 - Database credentials stay server-side (env vars), never in prompts.
@@ -156,31 +184,6 @@ Or with Docker Compose (builds from local Dockerfile):
 ```bash
 docker compose up --build
 ```
-
-## MCP Client Configuration
-
-To use this server with Cursor, Claude Desktop, or other MCP clients, add it to your MCP config:
-
-**Cursor** (`.cursor/mcp.json` or Cursor Settings → MCP):
-
-```json
-{
-  "mcpServers": {
-    "secure-sql": {
-      "command": "python",
-      "args": ["-m", "secure_sql_mcp.server"],
-      "env": {
-        "DATABASE_URL": "sqlite+aiosqlite:///./example.db",
-        "ALLOWED_POLICY_FILE": "./policy/allowed_policy.txt"
-      }
-    }
-  }
-}
-```
-
-**Claude Desktop** (`claude_desktop_config.json`): same structure under `mcpServers`.
-
-Ensure the policy file path and database URL are correct for your environment.
 
 ## Secrets Best Practices
 
