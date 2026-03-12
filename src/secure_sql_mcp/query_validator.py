@@ -239,6 +239,8 @@ class QueryValidator:
     def _dialect(self) -> str | None:
         if self.settings.database_url.startswith("postgresql"):
             return "postgres"
+        if self.settings.database_url.startswith("mysql"):
+            return "mysql"
         if self.settings.database_url.startswith("sqlite"):
             return "sqlite"
         return None

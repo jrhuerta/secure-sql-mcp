@@ -4,6 +4,7 @@ import asyncio
 import json
 import sqlite3
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
@@ -318,3 +319,25 @@ def test_query_db_error_message_does_not_leak_sensitive_details(
     assert "describe_table" in response
     assert "supersecret" not in response
     assert "internal-db" not in response
+
+
+def test_prepare_read_only_session_mysql_sets_timeout_and_read_only(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "mysql://user:pass@localhost:3306/appdb",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "QUERY_TIMEOUT": 12,
+        }
+    )
+    db = AsyncDatabase(settings)
+    fake_conn = AsyncMock()
+
+    asyncio.run(db._prepare_read_only_session(fake_conn))
+
+    executed_sql = [str(call.args[0]) for call in fake_conn.execute.await_args_list]
+    assert executed_sql == [
+        "SET SESSION MAX_EXECUTION_TIME = 12000",
+        "START TRANSACTION READ ONLY",
+    ]
