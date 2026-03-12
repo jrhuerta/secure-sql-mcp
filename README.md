@@ -63,7 +63,7 @@ The `--env-file` should point to a file containing `DATABASE_URL` and `ALLOWED_P
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | — | SQLAlchemy async URL (e.g. `sqlite+aiosqlite:///./example.db` or `postgresql+asyncpg://...`) |
+| `DATABASE_URL` | Yes | — | Database URL. Bare `postgresql://`, `mysql://`, and `sqlite://` URLs are accepted and auto-upgraded to async drivers (`+asyncpg`, `+aiomysql`, `+aiosqlite`). |
 | `ALLOWED_POLICY_FILE` | Yes | — | Path to the policy file |
 | `MAX_ROWS` | No | 100 | Maximum rows returned per query (1–10000) |
 | `QUERY_TIMEOUT` | No | 30 | Query timeout in seconds (1–300) |

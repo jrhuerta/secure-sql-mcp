@@ -104,6 +104,10 @@ class AsyncDatabase:
             timeout_ms = int(self._settings.query_timeout) * 1000
             await conn.execute(text("BEGIN READ ONLY"))
             await conn.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
+        elif self._settings.database_url.startswith("mysql"):
+            timeout_ms = int(self._settings.query_timeout) * 1000
+            await conn.execute(text(f"SET SESSION MAX_EXECUTION_TIME = {timeout_ms}"))
+            await conn.execute(text("START TRANSACTION READ ONLY"))
         elif self._settings.database_url.startswith("sqlite"):
             await conn.execute(text("PRAGMA query_only = ON"))
 

@@ -11,13 +11,14 @@ Core package: `src/secure_sql_mcp`
 
 - `config.py`
   - Loads env config.
+  - Injects async driver suffixes for bare `DATABASE_URL` schemes (`postgresql://`, `mysql://`, `sqlite://`).
   - Parses `ALLOWED_POLICY_FILE` in strict `table:columns` format.
 - `query_validator.py`
   - SQL safety checks (read-only, single statement).
   - Strict table/column authorization checks.
 - `database.py`
   - Async SQLAlchemy access.
-  - Read-only session preparation and query timeout/row caps.
+  - Read-only session preparation and query timeout/row caps (PostgreSQL, MySQL, SQLite).
 - `server.py`
   - MCP tool surface (`query`, `list_tables`, `describe_table`).
   - User/agent-facing responses.

@@ -15,6 +15,7 @@ dependencies = [
   "sqlglot",
   "sqlalchemy[asyncio]",
   "asyncpg",
+  "aiomysql",
   "aiosqlite",
   "pydantic-settings",
 ]

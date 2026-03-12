@@ -11,6 +11,45 @@ from secure_sql_mcp.config import Settings
 from tests.conftest import write_policy
 
 
+@pytest.mark.parametrize(
+    ("database_url", "expected_url"),
+    [
+        (
+            "postgresql://user:pass@localhost:5432/appdb",
+            "postgresql+asyncpg://user:pass@localhost:5432/appdb",
+        ),
+        (
+            "mysql://user:pass@localhost:3306/appdb",
+            "mysql+aiomysql://user:pass@localhost:3306/appdb",
+        ),
+        (
+            "sqlite:///./tmp.db",
+            "sqlite+aiosqlite:///./tmp.db",
+        ),
+        (
+            "postgresql+asyncpg://user:pass@localhost:5432/appdb",
+            "postgresql+asyncpg://user:pass@localhost:5432/appdb",
+        ),
+        (
+            "mysql+aiomysql://user:pass@localhost:3306/appdb",
+            "mysql+aiomysql://user:pass@localhost:3306/appdb",
+        ),
+    ],
+)
+def test_database_url_injects_or_preserves_async_driver(
+    tmp_path: Path, database_url: str, expected_url: str
+) -> None:
+    policy_path = tmp_path / "policy.txt"
+    write_policy(policy_path, "customers:id\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": database_url,
+            "ALLOWED_POLICY_FILE": str(policy_path),
+        }
+    )
+    assert settings.database_url == expected_url
+
+
 def test_policy_invalid_format_no_colon_raises(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.txt"
     write_policy(policy_path, "customers id email\n")

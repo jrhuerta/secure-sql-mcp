@@ -21,6 +21,29 @@ class Settings(BaseSettings):
     query_timeout: int = Field(default=30, alias="QUERY_TIMEOUT", ge=1, le=300)
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def inject_async_driver(cls, value: Any) -> str:
+        """Ensure SQLAlchemy async URLs include an async driver suffix."""
+        database_url = str(value).strip()
+        if "://" not in database_url:
+            return database_url
+
+        scheme = database_url.split("://", 1)[0]
+        if "+" in scheme:
+            return database_url
+
+        async_driver_map = {
+            "postgresql": "asyncpg",
+            "mysql": "aiomysql",
+            "sqlite": "aiosqlite",
+        }
+        driver = async_driver_map.get(scheme)
+        if driver is None:
+            return database_url
+
+        return database_url.replace(f"{scheme}://", f"{scheme}+{driver}://", 1)
+
     @model_validator(mode="after")
     def load_allowed_policy(self) -> Settings:
         """Load strict table:columns policy from file."""

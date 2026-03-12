@@ -151,3 +151,22 @@ def test_validator_blocks_except_with_disallowed_table(validator: QueryValidator
     result = validator.validate_query("SELECT id FROM customers EXCEPT SELECT id FROM secrets")
     assert not result.ok
     assert "Access to table 'secrets' is restricted" in (result.error or "")
+
+
+def test_validator_uses_mysql_dialect_for_mysql_url(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(
+        policy_path,
+        """
+        customers:id,email
+        """,
+    )
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "mysql://user:pass@localhost:3306/appdb",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+        }
+    )
+    validator = QueryValidator(settings)
+
+    assert validator._dialect == "mysql"
