@@ -69,18 +69,6 @@ The `--env-file` should point to a file containing `DATABASE_URL` and `ALLOWED_P
 | `QUERY_TIMEOUT` | No | 30 | Query timeout in seconds (1–300) |
 | `LOG_LEVEL` | No | INFO | Logging level (DEBUG, INFO, WARNING, ERROR) |
 
-## CastleDM DSN Integration
-
-`acc castledm dsn` emits driver-agnostic URLs (`postgresql://...` or `mysql://...`). `secure-sql-mcp` accepts those values directly in `DATABASE_URL` and injects the async driver suffix automatically.
-
-Example:
-
-```bash
-DATABASE_URL="$(acc castledm dsn maha intake --env=dev --read-only)" \
-ALLOWED_POLICY_FILE=./policy/allowed_policy.txt \
-python -m secure_sql_mcp.server
-```
-
 ## Policy File Format
 
 `allowed_policy.txt`:
