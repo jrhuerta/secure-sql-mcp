@@ -73,8 +73,9 @@ Run core security suites:
 ## Container Publishing
 
 - GitHub Actions publishes container images to `ghcr.io/jrhuerta/secure-sql-mcp`.
-- Images are published only when a GitHub Release is published (e.g. tag `v0.1.0`).
-- Use the release tag to pull: `docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0`.
+- Images are published only when a GitHub Release is published.
+- Each release pushes both the version tag (e.g. `v0.1.0`) and `latest`.
+- Use `docker pull ghcr.io/jrhuerta/secure-sql-mcp:latest` or a specific version tag.
 
 ## Policy File Contract
 
