@@ -92,6 +92,7 @@ jobs:
           images: ghcr.io/jrhuerta/secure-sql-mcp
           tags: |
             type=raw,value=${{ github.event.release.tag_name }}
+            type=raw,value=latest
 
       - name: Build and push image
         uses: docker/build-push-action@v7

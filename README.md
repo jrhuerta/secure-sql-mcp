@@ -22,7 +22,7 @@ To use this server with Cursor, Claude Desktop, or other MCP clients, add it to 
         "--rm",
         "--env-file", "/path/to/your/secrets",
         "-v", "/path/to/your/policy:/run/policy:ro",
-        "ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0"
+        "ghcr.io/jrhuerta/secure-sql-mcp:latest"
       ]
     }
   }
@@ -31,7 +31,7 @@ To use this server with Cursor, Claude Desktop, or other MCP clients, add it to 
 
 **Claude Desktop** (`claude_desktop_config.json`): same structure under `mcpServers`.
 
-The `--env-file` should point to a file containing `DATABASE_URL` and `ALLOWED_POLICY_FILE=/run/policy/allowed_policy.txt` (see Environment Variables below). The volume mounts the policy directory read-only. Pull the image first: `docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0`
+The `--env-file` should point to a file containing `DATABASE_URL` and `ALLOWED_POLICY_FILE=/run/policy/allowed_policy.txt` (see Environment Variables below). The volume mounts the policy directory read-only. Pull the image first: `docker pull ghcr.io/jrhuerta/secure-sql-mcp:latest`
 
 ## Security Model
 
@@ -164,10 +164,10 @@ docker run -i --rm \
 
 ## Quick Start (GHCR Image)
 
-Images are published when a GitHub Release is published (e.g. tag `v0.1.0`). Pull by release tag:
+Images are published when a GitHub Release is created. Each release pushes both the version tag (e.g. `v0.1.0`) and `latest`:
 
 ```bash
-docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0
+docker pull ghcr.io/jrhuerta/secure-sql-mcp:latest
 ```
 
 Run with env file and read-only mounted policy:
@@ -176,7 +176,7 @@ Run with env file and read-only mounted policy:
 docker run -i --rm \
   --env-file .env \
   -v "$(pwd)/policy:/run/policy:ro" \
-  ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0
+  ghcr.io/jrhuerta/secure-sql-mcp:latest
 ```
 
 Or with Docker Compose (builds from local Dockerfile):
@@ -280,8 +280,8 @@ After merging workflow/docs changes, verify:
   - linear history, no force-push, no deletion
 - CI workflow runs on PRs and on pushes to `main`
 - GHCR image publish succeeds when a GitHub Release is published
-- GHCR pull works (use release tag, e.g. `v0.1.0`):
-  - `docker pull ghcr.io/jrhuerta/secure-sql-mcp:v0.1.0`
+- GHCR pull works:
+  - `docker pull ghcr.io/jrhuerta/secure-sql-mcp:latest`
 - community docs are present:
   - `CONTRIBUTING.md`
   - `CODE_OF_CONDUCT.md`
