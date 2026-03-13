@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,14 @@ class Settings(BaseSettings):
     database_url: str = Field(alias="DATABASE_URL")
     allowed_policy_file: str = Field(alias="ALLOWED_POLICY_FILE")
     allowed_policy: dict[str, set[str]] = Field(default_factory=dict)
+    effective_acl_policy: dict[str, set[str]] = Field(default_factory=dict)
+    opa_url: str | None = Field(default=None, alias="OPA_URL")
+    opa_decision_path: str = Field(
+        default="/v1/data/secure_sql/authz/decision", alias="OPA_DECISION_PATH"
+    )
+    opa_timeout_ms: int = Field(default=50, alias="OPA_TIMEOUT_MS", ge=1, le=5000)
+    opa_fail_closed: bool = Field(default=True, alias="OPA_FAIL_CLOSED")
+    opa_acl_data_file: str | None = Field(default=None, alias="OPA_ACL_DATA_FILE")
     max_rows: int = Field(default=100, alias="MAX_ROWS", ge=1, le=10000)
     query_timeout: int = Field(default=30, alias="QUERY_TIMEOUT", ge=1, le=300)
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -48,7 +57,18 @@ class Settings(BaseSettings):
     def load_allowed_policy(self) -> Settings:
         """Load strict table:columns policy from file."""
         self.allowed_policy = self._parse_allowed_policy_file(self.allowed_policy_file)
+        self.effective_acl_policy = self._load_effective_acl_policy(
+            self.allowed_policy, self.opa_acl_data_file
+        )
         return self
+
+    @field_validator("opa_decision_path", mode="before")
+    @classmethod
+    def normalize_opa_decision_path(cls, value: Any) -> str:
+        path = str(value).strip()
+        if not path:
+            return "/v1/data/secure_sql/authz/decision"
+        return path if path.startswith("/") else f"/{path}"
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -104,6 +124,72 @@ class Settings(BaseSettings):
         if not policy:
             raise ValueError("Allowed policy file is empty. Add at least one table rule.")
         return policy
+
+    @classmethod
+    def _load_effective_acl_policy(
+        cls, allowed_policy: dict[str, set[str]], opa_acl_data_file: str | None
+    ) -> dict[str, set[str]]:
+        """Load ACL from OPA-native data file when available, else fallback to legacy policy."""
+        if not opa_acl_data_file:
+            return {table: set(columns) for table, columns in allowed_policy.items()}
+
+        acl_path = Path(opa_acl_data_file).expanduser()
+        if not acl_path.exists():
+            raise ValueError(f"OPA ACL data file does not exist: {acl_path}")
+        if not acl_path.is_file():
+            raise ValueError(f"OPA ACL data path is not a file: {acl_path}")
+
+        try:
+            payload = json.loads(acl_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"OPA ACL data file must be valid JSON: {exc.msg}") from exc
+
+        tables_payload = cls._extract_opa_tables_payload(payload)
+        parsed: dict[str, set[str]] = {}
+        for raw_table, raw_rule in tables_payload.items():
+            table = str(raw_table).strip().lower()
+            if not table:
+                continue
+            if not isinstance(raw_rule, dict):
+                raise ValueError(f"OPA ACL rule for table '{table}' must be an object.")
+            raw_columns = raw_rule.get("columns")
+            if not isinstance(raw_columns, list) or not raw_columns:
+                raise ValueError(
+                    f"OPA ACL rule for table '{table}' must include non-empty 'columns' list."
+                )
+            columns = {str(column).strip().lower() for column in raw_columns if str(column).strip()}
+            if not columns:
+                raise ValueError(
+                    f"OPA ACL rule for table '{table}' includes no valid column entries."
+                )
+            if "*" in columns and len(columns) > 1:
+                raise ValueError(
+                    f"OPA ACL wildcard for table '{table}' must be used alone in 'columns'."
+                )
+            parsed[table] = columns
+
+        if not parsed:
+            raise ValueError("OPA ACL data file resolved to an empty ACL policy.")
+        return parsed
+
+    @staticmethod
+    def _extract_opa_tables_payload(payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("OPA ACL data file root must be a JSON object.")
+
+        if "tables" in payload and isinstance(payload["tables"], dict):
+            return payload["tables"]
+
+        secure_sql = payload.get("secure_sql")
+        if not isinstance(secure_sql, dict):
+            raise ValueError("OPA ACL data must define either 'tables' or 'secure_sql.acl.tables'.")
+        acl = secure_sql.get("acl")
+        if not isinstance(acl, dict):
+            raise ValueError("OPA ACL data missing object at 'secure_sql.acl'.")
+        tables = acl.get("tables")
+        if not isinstance(tables, dict):
+            raise ValueError("OPA ACL data missing object at 'secure_sql.acl.tables'.")
+        return tables
 
 
 def load_settings() -> Settings:

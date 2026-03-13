@@ -1,0 +1,7 @@
+tbl_alayamarket_demand_offers:id,visit_id,alayamarket_offer_id
+tbl_alayamarket_demand_offers_audit:*
+tbl_offers_responses:*
+tbl_schedule_offer:*
+tbl_schedule_offer_response:*
+view_grouped_offer_responses:*
+view_guid_computed_offer_responses:*

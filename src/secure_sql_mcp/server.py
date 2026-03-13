@@ -7,11 +7,13 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
 from secure_sql_mcp.config import Settings, load_settings
 from secure_sql_mcp.database import AsyncDatabase
+from secure_sql_mcp.opa_policy import OpaPolicyEngine
 from secure_sql_mcp.query_validator import QueryValidator
 
 LOGGER = logging.getLogger(__name__)
@@ -22,6 +24,7 @@ class AppState:
     settings: Settings
     db: AsyncDatabase
     validator: QueryValidator
+    policy_engine: OpaPolicyEngine | None
 
 
 STATE: AppState | None = None
@@ -34,9 +37,10 @@ async def lifespan(_: FastMCP) -> AsyncIterator[None]:
     settings = load_settings()
     logging.basicConfig(level=settings.log_level)
     db = AsyncDatabase(settings)
-    validator = QueryValidator(settings)
+    policy_engine = OpaPolicyEngine(settings) if settings.opa_url else None
+    validator = QueryValidator(settings, policy_engine=policy_engine)
     await db.connect()
-    STATE = AppState(settings=settings, db=db, validator=validator)
+    STATE = AppState(settings=settings, db=db, validator=validator, policy_engine=policy_engine)
     LOGGER.info("secure-sql-mcp started")
     try:
         yield
@@ -94,7 +98,14 @@ async def query(sql: str) -> str:
 async def list_tables() -> str:
     """List tables the agent is allowed to query, validating existence when possible."""
     app = _state()
-    policy = app.settings.allowed_policy
+    if app.policy_engine is not None:
+        decision = await app.policy_engine.evaluate(
+            _build_tool_policy_input("list_tables", app.settings)
+        )
+        if not decision.allow:
+            return decision.message or "Operation blocked by policy."
+
+    policy = app.settings.effective_acl_policy
     policy_tables = sorted(policy)
     policy_set = {t.lower() for t in policy}
     discovered: list[str] = []
@@ -139,9 +150,16 @@ async def list_tables() -> str:
 async def describe_table(table: str) -> str:
     """Describe columns for an allowed table."""
     app = _state()
+    if app.policy_engine is not None:
+        payload = _build_tool_policy_input("describe_table", app.settings)
+        payload["table"] = table.lower()
+        decision = await app.policy_engine.evaluate(payload)
+        if not decision.allow:
+            return decision.message or "Operation blocked by policy."
+
     policy_columns = app.validator.lookup_table_policy(table)
     if policy_columns is None:
-        available_tables = ", ".join(sorted(app.settings.allowed_policy))
+        available_tables = ", ".join(sorted(app.settings.effective_acl_policy))
         return (
             f"Access to table '{table}' is restricted by the server access policy. "
             f"Allowed tables are: {available_tables}. "
@@ -176,6 +194,14 @@ async def describe_table(table: str) -> str:
 def main() -> None:
     """Run the MCP server with stdio transport."""
     mcp.run(transport="stdio")
+
+
+def _build_tool_policy_input(tool_name: str, settings: Settings) -> dict[str, Any]:
+    acl_tables = {
+        table: {"columns": sorted(columns)}
+        for table, columns in sorted(settings.effective_acl_policy.items())
+    }
+    return {"tool": {"name": tool_name}, "acl": {"tables": acl_tables}}
 
 
 if __name__ == "__main__":

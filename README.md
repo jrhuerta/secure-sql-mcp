@@ -1,6 +1,7 @@
 # Secure SQL MCP Server
 
-Read-only SQL MCP server with strict table/column policy controls.
+Read-only SQL MCP server with strict table/column policy controls, with OPA-based
+authorization running inside the same container.
 
 [![CI](https://github.com/jrhuerta/secure-sql-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jrhuerta/secure-sql-mcp/actions/workflows/ci.yml)
 [![GHCR](https://img.shields.io/badge/ghcr-jrhuerta%2Fsecure--sql--mcp-blue)](https://github.com/jrhuerta/secure-sql-mcp/pkgs/container/secure-sql-mcp)
@@ -31,27 +32,33 @@ To use this server with Cursor, Claude Desktop, or other MCP clients, add it to 
 
 **Claude Desktop** (`claude_desktop_config.json`): same structure under `mcpServers`.
 
-The `--env-file` should point to a file containing `DATABASE_URL` and `ALLOWED_POLICY_FILE=/run/policy/allowed_policy.txt` (see Environment Variables below). The volume mounts the policy directory read-only. Pull the image first: `docker pull ghcr.io/jrhuerta/secure-sql-mcp:latest`
+The `--env-file` should point to a file containing `DATABASE_URL` and
+`ALLOWED_POLICY_FILE=/run/policy/allowed_policy.txt` (see Environment Variables below).
+The volume mounts the policy directory read-only. Pull the image first:
+`docker pull ghcr.io/jrhuerta/secure-sql-mcp:latest`
 
 ## Security Model
 
 - Database credentials stay server-side (env vars), never in prompts.
 - Only read queries are allowed.
-- Policy is strict and file-based:
-  - one required file: `ALLOWED_POLICY_FILE`
-  - each line is `table:col1,col2,col3` or `table:*`
+- OPA authorization runs in-process for the container image (local loopback only, no external port exposure).
+- Policy is strict and deny-by-default:
+  - baseline constraints and ACL rules are evaluated by OPA
+  - ACL source can come from a native OPA data file or transformed legacy `ALLOWED_POLICY_FILE`
 - If a table/column is not explicitly allowed, it is blocked.
 
 ## Implemented Security Controls
 
-- **Query shape enforcement**
+- **OPA baseline constraints (`default_constraints`)**
   - Exactly one SQL statement is allowed per request.
   - Non-read operations are blocked (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT`, `REVOKE`, `MERGE`, and related command expressions).
-- **Strict access policy enforcement**
+  - Unqualified columns in multi-table queries are rejected under strict mode.
+- **OPA ACL policy (`acl`)**
   - Deny-by-default for tables and columns.
   - Access checks apply across direct queries and composed queries (`JOIN`, `UNION`, subqueries, aliases).
-  - `SELECT *` is rejected unless the table policy is `table:*`.
-  - Unqualified columns in multi-table queries are rejected under strict mode.
+  - `SELECT *` is rejected unless ACL explicitly allows wildcard (`*`) for that table.
+- **Composed authorization (`authz`)**
+  - Access is granted only when both `default_constraints` and `acl` allow.
 - **Runtime safety controls**
   - Query timeout and row cap are enforced server-side.
   - Row-cap truncation is explicit in response payloads.
@@ -65,6 +72,11 @@ The `--env-file` should point to a file containing `DATABASE_URL` and `ALLOWED_P
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | — | Database URL. Bare `postgresql://`, `mysql://`, and `sqlite://` URLs are accepted and auto-upgraded to async drivers (`+asyncpg`, `+aiomysql`, `+aiosqlite`). |
 | `ALLOWED_POLICY_FILE` | Yes | — | Path to the policy file |
+| `OPA_URL` | No | `http://127.0.0.1:8181` in Docker image; unset otherwise | OPA base URL. When set, queries/tools are authorized via OPA. |
+| `OPA_DECISION_PATH` | No | `/v1/data/secure_sql/authz/decision` | OPA decision endpoint path. |
+| `OPA_TIMEOUT_MS` | No | `50` | OPA decision timeout in milliseconds. |
+| `OPA_FAIL_CLOSED` | No | `true` | If `true`, OPA errors/timeouts block access. |
+| `OPA_ACL_DATA_FILE` | No | unset | Optional JSON ACL file (`secure_sql.acl.tables`) preferred over transformed `ALLOWED_POLICY_FILE`. |
 | `MAX_ROWS` | No | 100 | Maximum rows returned per query (1–10000) |
 | `QUERY_TIMEOUT` | No | 30 | Query timeout in seconds (1–300) |
 | `LOG_LEVEL` | No | INFO | Logging level (DEBUG, INFO, WARNING, ERROR) |
@@ -83,6 +95,18 @@ Rules:
 - `table:*` allows all columns in that table.
 - `#` comments and blank lines are allowed.
 - Matching is case-insensitive.
+
+## OPA Policy Layout
+
+- Rego bundle directory: `policy/rego/`
+  - `default_constraints.rego`
+  - `acl.rego`
+  - `authz.rego`
+- Example ACL data file: `policy/data/acl.example.json`
+
+ACL source precedence at runtime:
+1. If `OPA_ACL_DATA_FILE` is set, ACL input is loaded from that JSON file.
+2. Otherwise, `ALLOWED_POLICY_FILE` is transformed into equivalent ACL input.
 
 ## Agent Discoverability
 
@@ -115,10 +139,29 @@ QUERY_TIMEOUT=30
 LOG_LEVEL=INFO
 EOF
 
+# Optional when testing against an external/local OPA process outside the container:
+# OPA_URL=http://127.0.0.1:8181
+# OPA_DECISION_PATH=/v1/data/secure_sql/authz/decision
+# OPA_TIMEOUT_MS=50
+# OPA_FAIL_CLOSED=true
+
 mkdir -p policy
 cat > policy/allowed_policy.txt <<'EOF'
 customers:id,email
 orders:*
+EOF
+
+cat > policy/acl.json <<'EOF'
+{
+  "secure_sql": {
+    "acl": {
+      "tables": {
+        "customers": {"columns": ["id", "email"]},
+        "orders": {"columns": ["*"]}
+      }
+    }
+  }
+}
 EOF
 
 # Create tables for local testing (optional)
@@ -150,6 +193,7 @@ EOF
 cat > .env <<'EOF'
 DATABASE_URL=sqlite+aiosqlite:///./example.db
 ALLOWED_POLICY_FILE=/run/policy/allowed_policy.txt
+OPA_ACL_DATA_FILE=/run/policy/acl.json
 MAX_ROWS=100
 QUERY_TIMEOUT=30
 LOG_LEVEL=INFO
@@ -191,6 +235,7 @@ docker compose up --build
 - Avoid hardcoding credentials in shell history.
 - Mount policy files read-only (`:ro`) in Docker.
 - Keep `.env` and policy files out of version control.
+- Keep OPA policy/data assets immutable in runtime containers.
 
 ## Dev Tooling
 
@@ -221,6 +266,7 @@ What these suites validate:
 - strict deny-by-default table/column ACL checks, including join/union/subquery paths
 - protocol-level behavior over MCP stdio transport
 - timeout, row cap truncation, and non-leaky actionable DB error responses
+- OPA fail-closed behavior and ACL source precedence
 
 ## CI Security Gate Expectations
 
@@ -237,7 +283,7 @@ python -m pytest -q \
 
 Recommended policy:
 - block merges on any failure in the security suites above
-- require test updates when changing query validation, policy parsing, or MCP tool responses
+- require test updates when changing query validation, OPA policy inputs, policy parsing, or MCP tool responses
 - keep security test fixtures deterministic (no shared state, no external DB dependency by default)
 
 ## Contributing
@@ -258,8 +304,9 @@ Before merging security-sensitive changes, verify:
 
 - query validation still enforces exactly one statement per request
 - mutation/DDL/privilege SQL operations are blocked with actionable messaging
-- table and column access remains deny-by-default against `ALLOWED_POLICY_FILE`
-- `SELECT *` is rejected unless policy explicitly allows `table:*`
+- table and column access remains deny-by-default against effective ACL source
+  (`OPA_ACL_DATA_FILE` when present, else transformed `ALLOWED_POLICY_FILE`)
+- `SELECT *` is rejected unless ACL explicitly allows wildcard
 - multi-table queries still reject unqualified columns and enforce alias-aware ACLs
 - timeout and row-cap protections remain active and tested
 - DB error responses stay sanitized and do not expose credentials/internal connection details

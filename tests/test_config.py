@@ -172,3 +172,50 @@ def test_normalize_log_level(tmp_path: Path) -> None:
         }
     )
     assert settings.log_level == "DEBUG"
+
+
+def test_opa_acl_data_file_preferred_over_allowed_policy(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.txt"
+    write_policy(policy_path, "customers:id\n")
+    opa_acl_path = tmp_path / "acl.json"
+    opa_acl_path.write_text(
+        """
+        {
+          "secure_sql": {
+            "acl": {
+              "tables": {
+                "orders": {"columns": ["*"]}
+              }
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./tmp.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "OPA_ACL_DATA_FILE": str(opa_acl_path),
+        }
+    )
+
+    assert settings.allowed_policy == {"customers": {"id"}}
+    assert settings.effective_acl_policy == {"orders": {"*"}}
+
+
+def test_invalid_opa_acl_json_raises(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.txt"
+    write_policy(policy_path, "customers:id\n")
+    opa_acl_path = tmp_path / "acl.json"
+    opa_acl_path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(ValidationError):
+        Settings.model_validate(
+            {
+                "DATABASE_URL": "sqlite+aiosqlite:///./tmp.db",
+                "ALLOWED_POLICY_FILE": str(policy_path),
+                "OPA_ACL_DATA_FILE": str(opa_acl_path),
+            }
+        )

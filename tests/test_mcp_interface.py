@@ -42,7 +42,9 @@ def app_state(tmp_path: Path):
     )
     db = AsyncDatabase(settings)
     asyncio.run(db.connect())
-    state = AppState(settings=settings, db=db, validator=QueryValidator(settings))
+    state = AppState(
+        settings=settings, db=db, validator=QueryValidator(settings), policy_engine=None
+    )
     mcp_server.STATE = state
 
     try:
@@ -91,7 +93,9 @@ def limited_app_state(tmp_path: Path):
     )
     db = AsyncDatabase(settings)
     asyncio.run(db.connect())
-    state = AppState(settings=settings, db=db, validator=QueryValidator(settings))
+    state = AppState(
+        settings=settings, db=db, validator=QueryValidator(settings), policy_engine=None
+    )
     mcp_server.STATE = state
 
     try:
