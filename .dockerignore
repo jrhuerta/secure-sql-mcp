@@ -13,6 +13,5 @@ SECURITY.md
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md
 docker-compose.yml
-policy
 .pre-commit-config.yaml
 .gitignore

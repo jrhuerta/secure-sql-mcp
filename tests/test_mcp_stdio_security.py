@@ -20,7 +20,7 @@ def _first_text(call_result: object) -> str:
     return ""
 
 
-def _server_params(tmp_path: Path) -> StdioServerParameters:
+def _server_params(tmp_path: Path, *, write_mode: bool = False) -> StdioServerParameters:
     db_path = tmp_path / "test.db"
     policy_path = tmp_path / "allowed_policy.txt"
     init_sqlite_db(db_path)
@@ -36,6 +36,15 @@ def _server_params(tmp_path: Path) -> StdioServerParameters:
             "LOG_LEVEL": "INFO",
         }
     )
+    if write_mode:
+        env.update(
+            {
+                "WRITE_MODE_ENABLED": "true",
+                "ALLOW_INSERT": "true",
+                "ALLOW_UPDATE": "true",
+                "ALLOW_DELETE": "true",
+            }
+        )
 
     return StdioServerParameters(
         command=sys.executable,
@@ -96,5 +105,52 @@ def test_mcp_stdio_blocks_multi_statement_payload(tmp_path: Path) -> None:
                 )
                 message = _first_text(result)
                 assert "Only a single SQL statement is allowed" in message
+
+    asyncio.run(_run())
+
+
+def test_mcp_stdio_blocks_insert_select_when_write_disabled(tmp_path: Path) -> None:
+    async def _run() -> None:
+        async with stdio_client(_server_params(tmp_path)) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "query",
+                    {"sql": "INSERT INTO orders (id, total) SELECT id, id FROM orders"},
+                )
+                message = _first_text(result)
+                assert "read-only access" in message
+                assert "INSERT" in message
+
+    asyncio.run(_run())
+
+
+def test_mcp_stdio_write_mode_allows_insert(tmp_path: Path) -> None:
+    async def _run() -> None:
+        async with stdio_client(_server_params(tmp_path, write_mode=True)) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "query",
+                    {"sql": "INSERT INTO customers (id, email) VALUES (2, 'b@example.com')"},
+                )
+                payload = json.loads(_first_text(result))
+                assert payload["status"] == "ok"
+                assert payload["operation"] == "insert"
+                assert payload["affected_rows"] == 1
+
+    asyncio.run(_run())
+
+
+def test_mcp_stdio_write_mode_blocks_tautological_delete(tmp_path: Path) -> None:
+    async def _run() -> None:
+        async with stdio_client(_server_params(tmp_path, write_mode=True)) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "query", {"sql": "DELETE FROM customers WHERE 1 = 1"}
+                )
+                message = _first_text(result)
+                assert "WHERE clause appears tautological" in message
 
     asyncio.run(_run())

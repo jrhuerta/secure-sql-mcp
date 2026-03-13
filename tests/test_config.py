@@ -219,3 +219,46 @@ def test_invalid_opa_acl_json_raises(tmp_path: Path) -> None:
                 "OPA_ACL_DATA_FILE": str(opa_acl_path),
             }
         )
+
+
+def test_write_mode_flags_default_to_false(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.txt"
+    write_policy(policy_path, "customers:id\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./tmp.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+        }
+    )
+    assert settings.write_mode_enabled is False
+    assert settings.allow_insert is False
+    assert settings.allow_update is False
+    assert settings.allow_delete is False
+    assert settings.require_where_for_update is True
+    assert settings.require_where_for_delete is True
+    assert settings.allow_returning is False
+
+
+def test_write_mode_flags_can_be_enabled(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.txt"
+    write_policy(policy_path, "customers:id\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./tmp.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_INSERT": True,
+            "ALLOW_UPDATE": True,
+            "ALLOW_DELETE": True,
+            "REQUIRE_WHERE_FOR_UPDATE": False,
+            "REQUIRE_WHERE_FOR_DELETE": False,
+            "ALLOW_RETURNING": True,
+        }
+    )
+    assert settings.write_mode_enabled is True
+    assert settings.allow_insert is True
+    assert settings.allow_update is True
+    assert settings.allow_delete is True
+    assert settings.require_where_for_update is False
+    assert settings.require_where_for_delete is False
+    assert settings.allow_returning is True

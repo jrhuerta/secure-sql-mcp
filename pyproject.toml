@@ -47,6 +47,10 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+  "docker_integration: real MCP server integration tests in Docker with OPA",
+  "smoke: fast representative scenario subset",
+]
 
 [tool.ruff]
 line-length = 100

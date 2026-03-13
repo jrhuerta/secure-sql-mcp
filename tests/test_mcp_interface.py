@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -105,6 +107,89 @@ def limited_app_state(tmp_path: Path):
         mcp_server.STATE = None
 
 
+@pytest.fixture()
+def write_enabled_app_state(tmp_path: Path):
+    db_path = tmp_path / "write_enabled.db"
+    init_sqlite_db(db_path)
+
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(
+        policy_path,
+        """
+        customers:id,email
+        orders:*
+        """,
+    )
+
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": f"sqlite+aiosqlite:///{db_path}",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_INSERT": True,
+            "ALLOW_UPDATE": True,
+            "ALLOW_DELETE": True,
+            "MAX_ROWS": 100,
+            "QUERY_TIMEOUT": 30,
+            "LOG_LEVEL": "INFO",
+        }
+    )
+    db = AsyncDatabase(settings)
+    asyncio.run(db.connect())
+    state = AppState(
+        settings=settings, db=db, validator=QueryValidator(settings), policy_engine=None
+    )
+    mcp_server.STATE = state
+
+    try:
+        yield state
+    finally:
+        asyncio.run(db.dispose())
+        mcp_server.STATE = None
+
+
+@pytest.fixture()
+def write_enabled_returning_app_state(tmp_path: Path):
+    db_path = tmp_path / "write_enabled_returning.db"
+    init_sqlite_db(db_path)
+
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(
+        policy_path,
+        """
+        customers:id,email
+        orders:*
+        """,
+    )
+
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": f"sqlite+aiosqlite:///{db_path}",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_INSERT": True,
+            "ALLOW_UPDATE": True,
+            "ALLOW_DELETE": True,
+            "ALLOW_RETURNING": True,
+            "MAX_ROWS": 100,
+            "QUERY_TIMEOUT": 30,
+            "LOG_LEVEL": "INFO",
+        }
+    )
+    db = AsyncDatabase(settings)
+    asyncio.run(db.connect())
+    state = AppState(
+        settings=settings, db=db, validator=QueryValidator(settings), policy_engine=None
+    )
+    mcp_server.STATE = state
+
+    try:
+        yield state
+    finally:
+        asyncio.run(db.dispose())
+        mcp_server.STATE = None
+
+
 def test_policy_parsing_valid(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.txt"
     write_policy(
@@ -169,6 +254,14 @@ def test_query_blocks_mutation_operations(app_state: AppState, sql: str, operati
     response = asyncio.run(mcp_server.query(sql))
     assert "read-only access" in response
     assert operation in response
+
+
+def test_query_blocks_insert_select_when_write_mode_disabled(app_state: AppState) -> None:
+    response = asyncio.run(
+        mcp_server.query("INSERT INTO orders (id, total) SELECT id, id FROM orders")
+    )
+    assert "read-only access" in response
+    assert "INSERT" in response
 
 
 def test_query_blocks_multi_statement_payload(app_state: AppState) -> None:
@@ -345,3 +438,137 @@ def test_prepare_read_only_session_mysql_sets_timeout_and_read_only(tmp_path: Pa
         "SET SESSION MAX_EXECUTION_TIME = 12000",
         "START TRANSACTION READ ONLY",
     ]
+
+
+def test_query_allows_insert_when_write_mode_enabled(write_enabled_app_state: AppState) -> None:
+    response = asyncio.run(
+        mcp_server.query("INSERT INTO customers (id, email) VALUES (2, 'b@example.com')")
+    )
+    payload = json.loads(response)
+    assert payload["status"] == "ok"
+    assert payload["operation"] == "insert"
+    assert payload["affected_rows"] == 1
+
+
+def test_query_allows_update_with_where_when_write_mode_enabled(
+    write_enabled_app_state: AppState,
+) -> None:
+    response = asyncio.run(
+        mcp_server.query("UPDATE customers SET email = 'c@example.com' WHERE id = 1")
+    )
+    payload = json.loads(response)
+    assert payload["status"] == "ok"
+    assert payload["operation"] == "update"
+    assert payload["affected_rows"] == 1
+
+    verify_response = asyncio.run(mcp_server.query("SELECT email FROM customers WHERE id = 1"))
+    verify_payload = json.loads(verify_response)
+    assert verify_payload["rows"][0]["email"] == "c@example.com"
+
+
+def test_query_blocks_update_without_where_even_when_write_enabled(
+    write_enabled_app_state: AppState,
+) -> None:
+    response = asyncio.run(mcp_server.query("UPDATE customers SET email = 'x@example.com'"))
+    assert "UPDATE without a WHERE clause is not allowed" in response
+
+
+def test_query_blocks_tautological_where_even_when_write_enabled(
+    write_enabled_app_state: AppState,
+) -> None:
+    response = asyncio.run(mcp_server.query("DELETE FROM customers WHERE 1 = 1"))
+    assert "WHERE clause appears tautological" in response
+
+
+def test_query_blocks_insert_from_disallowed_source_table_even_when_write_enabled(
+    write_enabled_app_state: AppState,
+) -> None:
+    response = asyncio.run(
+        mcp_server.query("INSERT INTO orders (id, total) SELECT s.id, s.id FROM secrets AS s")
+    )
+    assert "Access to table 'secrets' is restricted" in response
+
+
+def test_query_blocks_returning_by_default_even_when_write_enabled(
+    write_enabled_app_state: AppState,
+) -> None:
+    response = asyncio.run(
+        mcp_server.query(
+            "UPDATE customers SET email = 'x@example.com' WHERE id = 1 RETURNING email"
+        )
+    )
+    assert "RETURNING is not allowed" in response
+
+
+def test_query_blocks_restricted_returning_column_when_allowed(
+    write_enabled_returning_app_state: AppState,
+) -> None:
+    response = asyncio.run(
+        mcp_server.query("UPDATE customers SET email = 'x@example.com' WHERE id = 1 RETURNING ssn")
+    )
+    assert "RETURNING column(s) ssn" in response
+
+
+def test_write_query_timeout_returns_actionable_message(
+    write_enabled_app_state: AppState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _raise_timeout(_: str) -> object:
+        raise TimeoutError()
+
+    monkeypatch.setattr(write_enabled_app_state.db, "execute_write_query", _raise_timeout)
+    response = asyncio.run(
+        mcp_server.query("UPDATE customers SET email = 'x@example.com' WHERE id = 1")
+    )
+    assert (
+        f"Query exceeded the {write_enabled_app_state.settings.query_timeout}-second timeout"
+        in response
+    )
+
+
+def test_write_query_db_error_message_does_not_leak_sensitive_details(
+    write_enabled_app_state: AppState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _raise_db_error(_: str) -> object:
+        raise RuntimeError("password=supersecret host=internal-db")
+
+    monkeypatch.setattr(write_enabled_app_state.db, "execute_write_query", _raise_db_error)
+    response = asyncio.run(
+        mcp_server.query("UPDATE customers SET email = 'x@example.com' WHERE id = 1")
+    )
+    assert "Query execution failed with a database error" in response
+    assert "supersecret" not in response
+    assert "internal-db" not in response
+
+
+def test_main_cli_flags_set_write_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+    keys = ("WRITE_MODE_ENABLED", "ALLOW_INSERT", "ALLOW_UPDATE", "ALLOW_DELETE")
+    previous = {key: os.environ.get(key) for key in keys}
+
+    def _fake_run(*_: object, **__: object) -> None:
+        captured["WRITE_MODE_ENABLED"] = os.environ.get("WRITE_MODE_ENABLED", "")
+        captured["ALLOW_INSERT"] = os.environ.get("ALLOW_INSERT", "")
+        captured["ALLOW_UPDATE"] = os.environ.get("ALLOW_UPDATE", "")
+        captured["ALLOW_DELETE"] = os.environ.get("ALLOW_DELETE", "")
+
+    monkeypatch.setattr(mcp_server.mcp, "run", _fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["secure-sql-mcp", "--write-mode", "--allow-insert", "--allow-update", "--allow-delete"],
+    )
+
+    try:
+        mcp_server.main()
+        assert captured == {
+            "WRITE_MODE_ENABLED": "true",
+            "ALLOW_INSERT": "true",
+            "ALLOW_UPDATE": "true",
+            "ALLOW_DELETE": "true",
+        }
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value

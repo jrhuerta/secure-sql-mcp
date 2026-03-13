@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -61,13 +63,27 @@ def _state() -> AppState:
 
 @mcp.tool()
 async def query(sql: str) -> str:
-    """Run a read-only SQL query and return structured results."""
+    """Run a SQL query (read-only by default; writes only when explicitly enabled)."""
     app = _state()
     validation = app.validator.validate_query(sql)
     if not validation.ok:
         return validation.error or "Query blocked by policy."
 
+    statement_type = (validation.statement_type or "").lower()
     try:
+        if statement_type in {"insert", "update", "delete"}:
+            write_result = await app.db.execute_write_query(validation.normalized_sql or sql)
+            payload = {
+                "status": "ok",
+                "operation": statement_type,
+                "affected_rows": write_result.affected_rows,
+                "returning_columns": write_result.returning_columns,
+                "returning": write_result.returning_rows,
+                "referenced_tables": validation.referenced_tables or [],
+                "referenced_columns": validation.referenced_columns or {},
+            }
+            return json.dumps(payload, default=str, indent=2)
+
         result = await app.db.execute_read_query(validation.normalized_sql or sql)
     except TimeoutError:
         return (
@@ -193,6 +209,38 @@ async def describe_table(table: str) -> str:
 
 def main() -> None:
     """Run the MCP server with stdio transport."""
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument(
+        "--write-mode",
+        action="store_true",
+        help="Enable write-mode execution path (disabled by default).",
+    )
+    parser.add_argument(
+        "--allow-insert",
+        action="store_true",
+        help="Allow INSERT statements when write mode is enabled.",
+    )
+    parser.add_argument(
+        "--allow-update",
+        action="store_true",
+        help="Allow UPDATE statements when write mode is enabled.",
+    )
+    parser.add_argument(
+        "--allow-delete",
+        action="store_true",
+        help="Allow DELETE statements when write mode is enabled.",
+    )
+    args, _ = parser.parse_known_args()
+
+    if args.write_mode:
+        os.environ["WRITE_MODE_ENABLED"] = "true"
+    if args.allow_insert:
+        os.environ["ALLOW_INSERT"] = "true"
+    if args.allow_update:
+        os.environ["ALLOW_UPDATE"] = "true"
+    if args.allow_delete:
+        os.environ["ALLOW_DELETE"] = "true"
+
     mcp.run(transport="stdio")
 
 

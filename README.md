@@ -77,9 +77,21 @@ The volume mounts the policy directory read-only. Pull the image first:
 | `OPA_TIMEOUT_MS` | No | `50` | OPA decision timeout in milliseconds. |
 | `OPA_FAIL_CLOSED` | No | `true` | If `true`, OPA errors/timeouts block access. |
 | `OPA_ACL_DATA_FILE` | No | unset | Optional JSON ACL file (`secure_sql.acl.tables`) preferred over transformed `ALLOWED_POLICY_FILE`. |
+| `WRITE_MODE_ENABLED` | No | `false` | Enables write execution path (`INSERT`/`UPDATE`/`DELETE`) when `true`. |
+| `ALLOW_INSERT` | No | `false` | Allows `INSERT` statements when write mode is enabled. |
+| `ALLOW_UPDATE` | No | `false` | Allows `UPDATE` statements when write mode is enabled. |
+| `ALLOW_DELETE` | No | `false` | Allows `DELETE` statements when write mode is enabled. |
+| `REQUIRE_WHERE_FOR_UPDATE` | No | `true` | When `true`, `UPDATE` requires a `WHERE` clause. |
+| `REQUIRE_WHERE_FOR_DELETE` | No | `true` | When `true`, `DELETE` requires a `WHERE` clause. |
+| `ALLOW_RETURNING` | No | `false` | Allows `RETURNING` on write statements when `true`. |
 | `MAX_ROWS` | No | 100 | Maximum rows returned per query (1–10000) |
 | `QUERY_TIMEOUT` | No | 30 | Query timeout in seconds (1–300) |
 | `LOG_LEVEL` | No | INFO | Logging level (DEBUG, INFO, WARNING, ERROR) |
+
+Write mode guardrails:
+- All write-related flags default to `false` (deny-by-default).
+- OPA remains the policy decision point, but config gates are enforced first as coarse runtime brakes.
+- The server logs a `WARNING` when config gates block a write that policy would otherwise allow.
 
 ## Policy File Format
 
@@ -103,6 +115,8 @@ Rules:
   - `acl.rego`
   - `authz.rego`
 - Example ACL data file: `policy/data/acl.example.json`
+- Policy authoring guide: [`docs/POLICY_AUTHORING.md`](docs/POLICY_AUTHORING.md)
+- Controlled write mode design: [`docs/WRITE_MODE_DESIGN.md`](docs/WRITE_MODE_DESIGN.md)
 
 ACL source precedence at runtime:
 1. If `OPA_ACL_DATA_FILE` is set, ACL input is loaded from that JSON file.
@@ -120,7 +134,8 @@ The MCP server exposes:
   - allowed columns for that table from policy
   - schema metadata from DB when available
 - `query(sql)`:
-  - executes only if query is read-only and within table/column policy
+  - executes read queries by default under table/column policy
+  - executes write queries only when write mode/action toggles allow them and policy permits
 
 ## Quick Start (uv)
 
@@ -261,12 +276,44 @@ python -m pytest -q \
 ```
 
 What these suites validate:
-- read-only enforcement for mutation/privileged SQL operations
+- default read-only enforcement for mutation/privileged SQL operations
 - single-statement validation and parser hardening
 - strict deny-by-default table/column ACL checks, including join/union/subquery paths
+- write-mode guardrails (`WRITE_MODE_ENABLED` and per-action toggles), including WHERE safety checks
 - protocol-level behavior over MCP stdio transport
 - timeout, row cap truncation, and non-leaky actionable DB error responses
 - OPA fail-closed behavior and ACL source precedence
+
+## Real Docker + OPA Matrix Tests
+
+Run comprehensive real-server scenarios against Dockerized MCP+OPA across
+SQLite, PostgreSQL, and MySQL:
+
+```bash
+python -m pytest -q -m docker_integration tests/integration/docker/test_mcp_docker_opa_matrix.py
+```
+
+Run a faster smoke subset:
+
+```bash
+bash scripts/run-docker-opa-smoke.sh
+```
+
+Prerequisites:
+- Docker Engine with Compose plugin (`docker compose`)
+- ability to pull base images (`postgres:16-alpine`, `mysql:8.4`)
+
+Troubleshooting:
+- if MySQL/PostgreSQL startup is slow, rerun with `-m docker_integration -vv` to inspect per-scenario logs
+- if Docker is unavailable, these tests auto-skip and unit/security suites still run normally
+- if port/resource contention occurs, remove stale test stacks: `docker compose -f docker-compose.test.yml down -v --remove-orphans`
+
+What the Docker matrix validates:
+- read/write allow/deny behavior with real container runtime and OPA process
+- policy-profile variants mounted as read-only files
+- write gate toggles (`WRITE_MODE_ENABLED`, `ALLOW_*`) and WHERE/RETURNING controls
+- bypass-focused checks (`INSERT ... SELECT`, source `SELECT *`, tautological WHERE)
+- OPA fail-closed behavior when decision service is unavailable
 
 ## CI Security Gate Expectations
 

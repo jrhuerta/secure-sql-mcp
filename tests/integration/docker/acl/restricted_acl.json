@@ -1,0 +1,14 @@
+{
+  "secure_sql": {
+    "acl": {
+      "tables": {
+        "customers": {
+          "columns": ["id", "email"]
+        },
+        "orders": {
+          "columns": ["id", "total"]
+        }
+      }
+    }
+  }
+}

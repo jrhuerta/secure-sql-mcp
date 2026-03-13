@@ -7,6 +7,13 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./example.db}
       ALLOWED_POLICY_FILE: ${ALLOWED_POLICY_FILE:-/run/policy/allowed_policy.txt}
+      OPA_DECISION_PATH: ${OPA_DECISION_PATH:-/v1/data/secure_sql/authz/decision}
+      OPA_TIMEOUT_MS: ${OPA_TIMEOUT_MS:-50}
+      OPA_FAIL_CLOSED: ${OPA_FAIL_CLOSED:-true}
+      WRITE_MODE_ENABLED: ${WRITE_MODE_ENABLED:-false}
+      ALLOW_INSERT: ${ALLOW_INSERT:-false}
+      ALLOW_UPDATE: ${ALLOW_UPDATE:-false}
+      ALLOW_DELETE: ${ALLOW_DELETE:-false}
       MAX_ROWS: ${MAX_ROWS:-100}
       QUERY_TIMEOUT: ${QUERY_TIMEOUT:-30}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

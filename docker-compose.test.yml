@@ -1,0 +1,59 @@
+services:
+  secure-sql-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: secure-sql-mcp:test
+    environment:
+      ALLOWED_POLICY_FILE: /run/policy/allowed_policy.txt
+      OPA_URL: http://127.0.0.1:8181
+      OPA_DECISION_PATH: /v1/data/secure_sql/authz/decision
+      OPA_TIMEOUT_MS: "50"
+      OPA_FAIL_CLOSED: "true"
+      WRITE_MODE_ENABLED: "false"
+      ALLOW_INSERT: "false"
+      ALLOW_UPDATE: "false"
+      ALLOW_DELETE: "false"
+      REQUIRE_WHERE_FOR_UPDATE: "true"
+      REQUIRE_WHERE_FOR_DELETE: "true"
+      ALLOW_RETURNING: "false"
+      MAX_ROWS: "100"
+      QUERY_TIMEOUT: "30"
+      LOG_LEVEL: "INFO"
+    stdin_open: true
+    tty: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: secure
+      POSTGRES_PASSWORD: secure
+      POSTGRES_DB: secure_sql_test
+    volumes:
+      - ./tests/integration/docker/db-init/postgres.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secure -d secure_sql_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  mysql:
+    image: mysql:8.4
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: secure
+      MYSQL_PASSWORD: secure
+      MYSQL_DATABASE: secure_sql_test
+    volumes:
+      - ./tests/integration/docker/db-init/mysql.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -usecure -psecure --silent"]
+      interval: 2s
+      timeout: 2s
+      retries: 60

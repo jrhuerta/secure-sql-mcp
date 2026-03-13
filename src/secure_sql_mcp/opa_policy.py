@@ -39,8 +39,7 @@ class OpaPolicyEngine:
                 allow=False,
                 deny_reasons=["opa_unconfigured"],
                 message=(
-                    "Authorization service is not configured. "
-                    "Please escalate to a human operator."
+                    "Authorization service is not configured. Please escalate to a human operator."
                 ),
             )
 
@@ -124,17 +123,68 @@ class OpaPolicyEngine:
                 "Only a single SQL statement is allowed. "
                 "Please remove additional statements and try again."
             )
+        if "ddl_or_privilege_operation" in deny_reasons:
+            return (
+                "DDL and privilege operations are not permitted. "
+                "Please escalate to a human operator."
+            )
         if "disallowed_operation" in deny_reasons:
             return (
                 "This server is configured for read-only access. "
                 "If you need to modify data, please escalate to a human operator."
             )
+        if "write_not_enabled" in deny_reasons:
+            return (
+                "Write operations are disabled by server configuration. "
+                "Please escalate to a human operator."
+            )
+        if "insert_not_allowed" in deny_reasons:
+            return (
+                "INSERT operations are not permitted by server configuration. "
+                "Please escalate to a human operator."
+            )
+        if "update_not_allowed" in deny_reasons:
+            return (
+                "UPDATE operations are not permitted by server configuration. "
+                "Please escalate to a human operator."
+            )
+        if "delete_not_allowed" in deny_reasons:
+            return (
+                "DELETE operations are not permitted by server configuration. "
+                "Please escalate to a human operator."
+            )
+        if "insert_columns_missing" in deny_reasons:
+            return (
+                "INSERT statements must include an explicit column list under strict mode. "
+                "Please specify target columns explicitly."
+            )
         if "not_read_query" in deny_reasons:
             return "Only read-only SELECT queries are allowed."
+        if "missing_where_on_update" in deny_reasons:
+            return "UPDATE without a WHERE clause is not allowed."
+        if "missing_where_on_delete" in deny_reasons:
+            return "DELETE without a WHERE clause is not allowed."
+        if "tautological_where_clause" in deny_reasons:
+            return (
+                "The WHERE clause appears tautological and may update/delete too broadly. "
+                "Please provide a restrictive predicate."
+            )
+        if "returning_not_allowed" in deny_reasons:
+            return "RETURNING is not allowed for this write policy."
         if "table_restricted" in deny_reasons:
             return (
                 "Access to one or more tables is restricted by the server access policy. "
                 "Please use list_tables/describe_table to view allowed targets."
+            )
+        if "write_source_table_restricted" in deny_reasons:
+            return (
+                "INSERT ... SELECT references one or more source tables restricted by policy. "
+                "Please use list_tables/describe_table to view allowed targets."
+            )
+        if "write_column_restricted" in deny_reasons:
+            return (
+                "Write access to one or more target columns is restricted by policy. "
+                "Use describe_table to inspect allowed columns."
             )
         if "column_restricted" in deny_reasons:
             return (

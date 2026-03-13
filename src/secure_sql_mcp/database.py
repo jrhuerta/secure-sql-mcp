@@ -21,6 +21,15 @@ class QueryExecutionResult:
     truncated: bool
 
 
+@dataclass(slots=True)
+class WriteExecutionResult:
+    """Structured result for write statements."""
+
+    affected_rows: int
+    returning_columns: list[str]
+    returning_rows: list[dict[str, Any]]
+
+
 class AsyncDatabase:
     """Async SQLAlchemy wrapper with read-only execution safeguards."""
 
@@ -58,6 +67,36 @@ class AsyncDatabase:
                 if truncated:
                     rows = rows[: self._settings.max_rows]
                 return QueryExecutionResult(columns=columns, rows=rows, truncated=truncated)
+
+        return await asyncio.wait_for(_run(), timeout=self._settings.query_timeout)
+
+    async def execute_write_query(self, sql: str) -> WriteExecutionResult:
+        """Execute a single write statement with timeout and optional RETURNING payload."""
+        if self._engine is None:
+            raise RuntimeError("Database engine is not initialized.")
+
+        statement = text(sql.strip().rstrip(";"))
+
+        async def _run() -> WriteExecutionResult:
+            if self._engine is None:
+                raise RuntimeError("Database engine is not initialized.")
+            async with self._engine.begin() as conn:
+                await self._prepare_write_session(conn)
+                result = await conn.execute(statement)
+                affected_rows = int(result.rowcount) if result.rowcount is not None else 0
+                returning_rows: list[dict[str, Any]] = []
+                returning_columns: list[str] = []
+                if result.returns_rows:
+                    fetched = result.fetchmany(self._settings.max_rows + 1)
+                    returning_rows = [
+                        dict(row._mapping) for row in fetched[: self._settings.max_rows]
+                    ]
+                    returning_columns = list(result.keys())
+                return WriteExecutionResult(
+                    affected_rows=affected_rows,
+                    returning_columns=returning_columns,
+                    returning_rows=returning_rows,
+                )
 
         return await asyncio.wait_for(_run(), timeout=self._settings.query_timeout)
 
@@ -110,6 +149,15 @@ class AsyncDatabase:
             await conn.execute(text("START TRANSACTION READ ONLY"))
         elif self._settings.database_url.startswith("sqlite"):
             await conn.execute(text("PRAGMA query_only = ON"))
+
+    async def _prepare_write_session(self, conn: AsyncConnection) -> None:
+        """Apply DB-specific timeout settings for write operations."""
+        if self._settings.database_url.startswith("postgresql"):
+            timeout_ms = int(self._settings.query_timeout) * 1000
+            await conn.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
+        elif self._settings.database_url.startswith("mysql"):
+            timeout_ms = int(self._settings.query_timeout) * 1000
+            await conn.execute(text(f"SET SESSION MAX_EXECUTION_TIME = {timeout_ms}"))
 
     @staticmethod
     def _wrap_with_limit(sql: str, limit: int) -> str:

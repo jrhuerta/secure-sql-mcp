@@ -170,3 +170,165 @@ def test_validator_uses_mysql_dialect_for_mysql_url(tmp_path: Path) -> None:
     validator = QueryValidator(settings)
 
     assert validator._dialect == "mysql"
+
+
+def test_validator_allows_insert_when_write_mode_enabled(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_INSERT": True,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query(
+        "INSERT INTO customers (id, email) VALUES (2, 'b@example.com')"
+    )
+    assert result.ok
+    assert result.statement_type == "insert"
+
+
+def test_validator_blocks_update_without_where_in_write_mode(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_UPDATE": True,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query("UPDATE customers SET email = 'x@example.com'")
+    assert not result.ok
+    assert "UPDATE without a WHERE clause is not allowed" in (result.error or "")
+
+
+def test_validator_blocks_tautological_where_in_write_mode(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_DELETE": True,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query("DELETE FROM customers WHERE 1 = 1")
+    assert not result.ok
+    assert "WHERE clause appears tautological" in (result.error or "")
+
+
+def test_validator_blocks_insert_select_when_write_mode_disabled(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\norders:*\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": False,
+            "ALLOW_INSERT": True,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query("INSERT INTO orders (id, total) SELECT id, id FROM customers")
+    assert not result.ok
+    assert "configured for read-only access" in (result.error or "")
+
+
+def test_validator_blocks_update_with_subquery_when_update_disabled(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\norders:*\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_UPDATE": False,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query(
+        "UPDATE customers SET email = (SELECT 'x@example.com') WHERE id = 1"
+    )
+    assert not result.ok
+    assert "UPDATE operations are disabled" in (result.error or "")
+
+
+def test_validator_blocks_delete_with_subquery_when_delete_disabled(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\norders:*\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_DELETE": False,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query(
+        "DELETE FROM customers WHERE id IN (SELECT id FROM customers)"
+    )
+    assert not result.ok
+    assert "DELETE operations are disabled" in (result.error or "")
+
+
+def test_validator_blocks_returning_by_default(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_UPDATE": True,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query(
+        "UPDATE customers SET email = 'x@example.com' WHERE id = 1 RETURNING email"
+    )
+    assert not result.ok
+    assert "RETURNING is not allowed" in (result.error or "")
+
+
+def test_validator_blocks_insert_select_star_from_non_wildcard_source(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\norders:*\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_INSERT": True,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query("INSERT INTO orders (id, total) SELECT * FROM customers")
+    assert not result.ok
+    assert "SELECT * is not allowed for table 'customers'" in (result.error or "")
+
+
+def test_validator_accepts_qualified_target_table_with_short_policy_name(tmp_path: Path) -> None:
+    policy_path = tmp_path / "allowed_policy.txt"
+    write_policy(policy_path, "customers:id,email\n")
+    settings = Settings.model_validate(
+        {
+            "DATABASE_URL": "sqlite+aiosqlite:///./validator.db",
+            "ALLOWED_POLICY_FILE": str(policy_path),
+            "WRITE_MODE_ENABLED": True,
+            "ALLOW_UPDATE": True,
+        }
+    )
+    validator = QueryValidator(settings)
+    result = validator.validate_query(
+        "UPDATE main.customers SET email = 'x@example.com' WHERE id = 1"
+    )
+    assert result.ok
